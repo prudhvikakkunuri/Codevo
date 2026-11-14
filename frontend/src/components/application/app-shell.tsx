@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AppSidebar } from "@/components/application/app-sidebar";
 import { AppHeader } from "@/components/application/app-header";
+import { useAuth } from "@/lib/auth-context";
 import { X } from "lucide-react";
 
 interface AppShellProps {
@@ -12,10 +13,19 @@ interface AppShellProps {
 
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { isAuthenticated, isLoading, isConfigured } = useAuth();
   const isWorkspace = pathname.startsWith("/app/workspace");
 
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+
+  // Protected route enforcement: redirect unauthenticated users to /login
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated && isConfigured) {
+      router.replace(`/login?redirectTo=${encodeURIComponent(pathname)}`);
+    }
+  }, [isLoading, isAuthenticated, isConfigured, router, pathname]);
 
   // Close mobile drawer on Escape key
   useEffect(() => {
@@ -31,6 +41,23 @@ export function AppShell({ children }: AppShellProps) {
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [mobileDrawerOpen]);
+
+  // Loading skeleton to prevent flashing of protected contents
+  if (isLoading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-[#09090B] text-foreground">
+        <div className="flex flex-col items-center gap-3 text-zinc-400">
+          <div className="size-6 border-2 border-zinc-800 border-t-foreground rounded-full animate-spin" />
+          <span className="text-xs font-mono">Authenticating session...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // If unauthenticated and Supabase is configured, hold render while redirecting
+  if (!isAuthenticated && isConfigured) {
+    return null;
+  }
 
   // Fullscreen IDE workspace mode: bypass dashboard shell
   if (isWorkspace) {

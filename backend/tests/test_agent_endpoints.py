@@ -49,12 +49,78 @@ async def test_save_workspace_file_endpoint(client):
     payload = {
         "path": "app/utils/security.py",
         "content": "# Updated from Monaco\n",
+        "base_revision": 1,
     }
     response = await client.put("/api/v1/workspace/test-session-03/files", json=payload)
     assert response.status_code == 200
     data = response.json()
     assert data["path"] == "app/utils/security.py"
+    assert data["revision"] >= 2
     assert "diff" in data
+
+
+@pytest.mark.asyncio
+async def test_stale_update_rejected_with_http_409(client):
+    """PUT /api/v1/workspace/{session_id}/files returns HTTP 409 Conflict when base_revision is stale."""
+    session_id = "test-session-conflict-01"
+    await client.post(f"/api/v1/workspace/{session_id}/init?force_reset=true")
+
+    # First update: base_revision=1 moves revision to 2
+    res1 = await client.put(
+        f"/api/v1/workspace/{session_id}/files",
+        json={"path": "app/utils/security.py", "content": "# First edit\n", "base_revision": 1},
+    )
+    assert res1.status_code == 200
+    assert res1.json()["revision"] == 2
+
+    # Stale update: base_revision=1 is now older than current revision 2
+    res_stale = await client.put(
+        f"/api/v1/workspace/{session_id}/files",
+        json={"path": "app/utils/security.py", "content": "# Stale edit\n", "base_revision": 1},
+    )
+    assert res_stale.status_code == 409
+    error_payload = res_stale.json()["error"]
+    assert error_payload["code"] == "409"
+    conflict_data = error_payload["message"]
+    assert conflict_data["error"] == "Revision conflict"
+    assert conflict_data["expected_revision"] == 1
+    assert conflict_data["current_revision"] == 2
+    assert "# First edit" in conflict_data["current_content"]
+
+
+@pytest.mark.asyncio
+async def test_concurrent_agent_and_candidate_modification_conflict(client):
+    """Simulate Agent patch followed by candidate stale edit, verifying conflict rejection."""
+    session_id = "test-session-agent-candidate"
+    await client.post(f"/api/v1/workspace/{session_id}/init?force_reset=true")
+
+    from app.api.v1.routes.agent_workspace import workspace_manager
+
+    # Agent applies patch directly through workspace_manager
+    agent_patch = workspace_manager.patch_file(
+        session_id=session_id,
+        relative_path="app/utils/security.py",
+        target_string="def verify_password",
+        replacement_string="# Patched by Agent\ndef verify_password",
+    )
+    assert agent_patch["revision"] == 2
+
+    # Candidate was looking at base_revision=1 and submits a delayed Monaco edit
+    candidate_res = await client.put(
+        f"/api/v1/workspace/{session_id}/files",
+        json={"path": "app/utils/security.py", "content": "# Candidate stale buffer\n", "base_revision": 1},
+    )
+    assert candidate_res.status_code == 409
+    detail = candidate_res.json()["error"]["message"]
+    assert detail["current_revision"] == 2
+
+    # Candidate re-synchronizes and submits with updated base_revision=2
+    candidate_retry = await client.put(
+        f"/api/v1/workspace/{session_id}/files",
+        json={"path": "app/utils/security.py", "content": "# Candidate merged edit\n", "base_revision": 2},
+    )
+    assert candidate_retry.status_code == 200
+    assert candidate_retry.json()["revision"] == 3
 
 
 @pytest.mark.asyncio

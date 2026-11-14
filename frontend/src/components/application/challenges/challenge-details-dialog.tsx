@@ -1,7 +1,11 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { type Challenge } from "@/data/challenges";
+import { DEMO_SESSION_ID } from "@/data/workspace";
+import { clearClientSubmission } from "@/data/assessment";
+import { clearWorkspaceState } from "@/lib/workspace-storage";
 import {
   X,
   Timer,
@@ -11,6 +15,8 @@ import {
   Cpu,
   ShieldAlert,
   PlayCircle,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,13 +31,23 @@ export function ChallengeDetailsDialog({
   isOpen,
   onClose,
 }: ChallengeDetailsDialogProps) {
+  const router = useRouter();
   const dialogRef = useRef<HTMLDivElement>(null);
+  const [isStarting, setIsStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+
+  const handleClose = React.useCallback(() => {
+    if (isStarting) return;
+    setIsStarting(false);
+    setStartError(null);
+    onClose();
+  }, [isStarting, onClose]);
 
   // Close on Escape key press
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        onClose();
+        handleClose();
       }
     }
     if (isOpen) {
@@ -42,9 +58,43 @@ export function ChallengeDetailsDialog({
       document.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = "";
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, handleClose]);
 
   if (!isOpen || !challenge) return null;
+
+  const isDemoChallenge = challenge.id === "CI-001";
+
+  const handleStartInterview = async () => {
+    if (isStarting) return;
+    if (!isDemoChallenge) return;
+
+    setIsStarting(true);
+    setStartError(null);
+
+    try {
+      // Clear any prior client submission state and local document cache for this session
+      clearClientSubmission(DEMO_SESSION_ID);
+      clearWorkspaceState(DEMO_SESSION_ID);
+
+      // Call authoritative backend workspace initialization endpoint with force_reset=true
+      const res = await fetch(`http://localhost:8000/api/v1/workspace/${DEMO_SESSION_ID}/init?force_reset=true`, {
+        method: "POST",
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to initialize session workspace (${res.status} ${res.statusText})`);
+      }
+
+      // Close modal and navigate to the interview workspace
+      onClose();
+      router.push(`/app/workspace/${DEMO_SESSION_ID}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[Codevo] Failed to start interview session:", err);
+      setStartError(`Unable to start interview: ${message}. Ensure backend is running.`);
+      setIsStarting(false);
+    }
+  };
 
   return (
     <div
@@ -56,7 +106,7 @@ export function ChallengeDetailsDialog({
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/80 backdrop-blur-xs transition-opacity animate-in fade-in-0 duration-150"
-        onClick={onClose}
+        onClick={handleClose}
         aria-hidden="true"
       />
 
@@ -96,7 +146,7 @@ export function ChallengeDetailsDialog({
           </div>
 
           <button
-            onClick={onClose}
+            onClick={handleClose}
             aria-label="Close challenge briefing"
             className="size-8 rounded-md hover:bg-white/[0.06] text-zinc-400 hover:text-foreground flex items-center justify-center transition-colors shrink-0"
           >
@@ -180,27 +230,70 @@ export function ChallengeDetailsDialog({
           </div>
         </div>
 
-        {/* Footer Actions */}
-        <div className="p-4 sm:p-5 border-t border-border/50 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#0A0A0C]">
-          <span className="text-[11px] font-mono text-zinc-500 text-center sm:text-left">
-            Interactive IDE Workspace: Milestone 1.6
-          </span>
+        {/* Footer Actions & Error Alerts */}
+        <div className="p-4 sm:p-5 border-t border-border/50 flex flex-col gap-3 bg-[#0A0A0C]">
+          {startError && (
+            <div
+              role="alert"
+              className="flex items-center gap-2 p-2.5 rounded-lg border border-red-500/40 bg-red-950/20 text-red-300 text-xs font-mono"
+            >
+              <AlertCircle className="size-4 shrink-0 text-red-400" />
+              <span className="flex-1">{startError}</span>
+            </div>
+          )}
 
-          <div className="flex items-center gap-2.5 justify-end">
-            <button
-              onClick={onClose}
-              className="px-3.5 py-1.5 rounded-md text-xs font-medium border border-border/80 text-zinc-300 hover:text-foreground hover:bg-white/[0.04] transition-colors"
-            >
-              Close Briefing
-            </button>
-            <button
-              disabled
-              title="Session workspace provisioning will be available in Phase 1, Milestone 1.7"
-              className="inline-flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-medium bg-zinc-800 text-zinc-500 border border-zinc-700/60 cursor-not-allowed"
-            >
-              <PlayCircle className="size-3.5" />
-              <span>Start Interview (Milestone 1.7)</span>
-            </button>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <span className="text-[11px] font-mono text-zinc-500 text-center sm:text-left">
+              Authoritative IDE Workspace · {challenge.duration}
+            </span>
+
+            <div className="flex items-center gap-2.5 justify-end">
+              <button
+                type="button"
+                onClick={handleClose}
+                disabled={isStarting}
+                className="px-3.5 py-1.5 rounded-md text-xs font-medium border border-border/80 text-zinc-300 hover:text-foreground hover:bg-white/[0.04] transition-colors disabled:opacity-50"
+              >
+                Close Briefing
+              </button>
+              {isDemoChallenge ? (
+                <button
+                  type="button"
+                  onClick={handleStartInterview}
+                  disabled={isStarting}
+                  aria-label="Start Interview"
+                  data-testid="start-interview-button"
+                  className={cn(
+                    "inline-flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-medium transition-all shadow-sm",
+                    isStarting
+                      ? "bg-zinc-800 text-zinc-400 border border-zinc-700/60 cursor-wait opacity-80"
+                      : "bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer active:translate-y-px"
+                  )}
+                >
+                  {isStarting ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin" />
+                      <span>Starting Interview...</span>
+                    </>
+                  ) : (
+                    <>
+                      <PlayCircle className="size-3.5" />
+                      <span>Start Interview</span>
+                    </>
+                  )}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  title="Only challenge CI-001 is active in this prototype."
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-medium bg-zinc-800 text-zinc-500 border border-zinc-700/60 cursor-not-allowed"
+                >
+                  <PlayCircle className="size-3.5" />
+                  <span>Upcoming Challenge</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useMemo, useSyncExternalStore } from "react";
+import React, { useState, useEffect, useMemo, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { DEMO_INTERVIEW_HISTORY, type InterviewHistoryRecord } from "@/data/dashboard";
-import { getStoredSubmission } from "@/data/assessment";
+import { getStoredSubmission, type SubmissionRecord } from "@/data/assessment";
 import {
   FileText,
   Clock,
@@ -16,6 +16,29 @@ import {
 const emptySubscribe = () => () => {};
 
 export default function HistoryPage() {
+  const [backendSubmissions, setBackendSubmissions] = useState<SubmissionRecord[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchSubmissions() {
+      try {
+        const res = await fetch("http://localhost:8000/api/v1/submissions");
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && Array.isArray(data.submissions) && data.submissions.length > 0) {
+            setBackendSubmissions(data.submissions);
+          }
+        }
+      } catch {
+        // Backend offline or unreachable
+      }
+    }
+    fetchSubmissions();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const storedTimestamp = useSyncExternalStore(
     emptySubscribe,
     () => getStoredSubmission("ci-001-demo")?.submittedAt ?? null,
@@ -23,6 +46,23 @@ export default function HistoryPage() {
   );
 
   const historyItems: InterviewHistoryRecord[] = useMemo(() => {
+    if (backendSubmissions.length > 0) {
+      return backendSubmissions.map((sub) => ({
+        id: sub.submissionId,
+        submissionId: sub.submissionId,
+        challengeId: sub.challengeId || "CI-001",
+        challengeTitle: sub.challengeTitle || "Debug a Broken FastAPI Authentication API",
+        category: "Backend Security",
+        difficulty: "Medium",
+        completedAt: sub.submittedAt,
+        scorePercentage: Math.round(sub.scorePercentage),
+        assertionsPassed: sub.passedTests ?? 6,
+        assertionsTotal: sub.totalTests ?? 6,
+        durationMinutes: 25,
+        status: sub.scorePercentage >= 70 ? ("passed" as const) : ("failed" as const),
+      }));
+    }
+
     if (storedTimestamp) {
       return [
         {
@@ -32,7 +72,7 @@ export default function HistoryPage() {
       ];
     }
     return DEMO_INTERVIEW_HISTORY;
-  }, [storedTimestamp]);
+  }, [backendSubmissions, storedTimestamp]);
 
   return (
     <div className="space-y-8 pb-16 font-mono select-none">

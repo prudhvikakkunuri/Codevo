@@ -24,13 +24,33 @@ def clean_db():
 
 
 def test_password_hashing_and_verification_correctness():
-    """Verify that password hashing produces valid digests and verify_password returns True for matching plaintext."""
+    """Verify that password hashing uses Argon2id with unique salts and correctly validates credentials."""
     pwd = "CorrectHorseBatteryStaple123!"
-    hashed = hash_password(pwd)
-    assert hashed != pwd
-    assert len(hashed) >= 32
-    assert verify_password(pwd, hashed) is True
-    assert verify_password("WrongPassword123!", hashed) is False
+    hashed1 = hash_password(pwd)
+    hashed2 = hash_password(pwd)
+
+    # 1. Plaintext must never be stored directly
+    assert hashed1 != pwd
+    assert hashed2 != pwd
+
+    # 2. Algorithm verification: Must use Argon2id format
+    assert hashed1.startswith("$argon2id$")
+    assert hashed2.startswith("$argon2id$")
+
+    # 3. Unique salt verification: Two hashes of identical passwords must not match
+    assert hashed1 != hashed2
+
+    # 4. Correct password must be accepted
+    assert verify_password(pwd, hashed1) is True
+    assert verify_password(pwd, hashed2) is True
+
+    # 5. Incorrect password must be rejected
+    assert verify_password("WrongPassword123!", hashed1) is False
+    assert verify_password("WrongPassword123!", hashed2) is False
+
+    # 6. Malformed hashes must be handled safely without unhandled exceptions
+    assert verify_password(pwd, "invalid_malformed_hash") is False
+    assert verify_password(pwd, "") is False
 
 
 def test_user_registration_success():

@@ -7,6 +7,7 @@
  */
 
 import { OFFICIAL_CHALLENGES } from "./challenges";
+import type { LiveTestCase } from "@/lib/test-runner";
 
 export interface RubricCategoryScore {
   id: string;
@@ -39,8 +40,10 @@ export interface AutomatedTestSnapshot {
   passed: number;
   failed: number;
   simulatedDurationSec: number;
-  isSimulatedOnly: true;
+  isSimulatedOnly: boolean;
   summaryNote: string;
+  runnerType?: string;
+  testCases?: LiveTestCase[];
 }
 
 export interface AssessmentReport {
@@ -51,7 +54,7 @@ export interface AssessmentReport {
   submittedAt: string;
   completedDurationMinutes: number;
   status: "evaluated" | "evaluating" | "failed";
-  isDemoAssessment: true;
+  isDemoAssessment: boolean;
   overallScore: number; // 0 - 100 (weighted sum of rubric categories)
   performanceRating: "Exceeds Expectations" | "Meets Expectations" | "Needs Improvement";
   ratingDescription: string;
@@ -75,7 +78,12 @@ export interface SubmissionRecord {
   submittedAt: string;
   status: "evaluated" | "evaluating" | "failed";
   scorePercentage: number;
-  isDemoSubmission: true;
+  isDemoSubmission: boolean;
+  testRunId?: string;
+  runnerType?: string;
+  totalTests?: number;
+  passedTests?: number;
+  failedTests?: number;
   submittedDocuments?: Record<string, { content: string; isModified: boolean }>;
 }
 
@@ -279,6 +287,20 @@ function notifySubmissionChange(): void {
 
 export function getSubmissionStorageKey(sessionId: string): string {
   return `${SUBMISSION_STORAGE_PREFIX}${sessionId.trim().toLowerCase()}`;
+}
+
+export function clearClientSubmission(sessionId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const key = getSubmissionStorageKey(sessionId);
+    localStorage.removeItem(key);
+    cachedSubmissionRaw = null;
+    cachedSubmissionRecord = null;
+    cachedSubmissionKey = null;
+    notifySubmissionChange();
+  } catch {
+    // ignore storage access errors
+  }
 }
 
 export function isSessionSubmitted(sessionId: string): boolean {

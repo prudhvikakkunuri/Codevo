@@ -42,8 +42,8 @@ export function Navbar() {
 
         {/* Right: Actions */}
         <div className="hidden sm:flex items-center gap-3">
-          <a
-            href="#cta"
+          <Link
+            href="/login"
             className={buttonVariants({
               variant: "ghost",
               size: "sm",
@@ -51,7 +51,7 @@ export function Navbar() {
             })}
           >
             Sign in
-          </a>
+          </Link>
           <Link
             href="/app"
             className={buttonVariants({
@@ -95,8 +95,8 @@ export function Navbar() {
             ))}
           </nav>
           <div className="pt-3 border-t border-border flex flex-col gap-2">
-            <a
-              href="#cta"
+            <Link
+              href="/login"
               onClick={() => setMobileMenuOpen(false)}
               className={buttonVariants({
                 variant: "outline",
@@ -105,7 +105,7 @@ export function Navbar() {
               })}
             >
               Sign in
-            </a>
+            </Link>
             <Link
               href="/app"
               onClick={() => setMobileMenuOpen(false)}

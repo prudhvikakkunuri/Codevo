@@ -9,7 +9,8 @@ RUN pip install --no-cache-dir \
     fastapi==0.115.0 \
     pydantic==2.9.2 \
     email-validator==2.2.0 \
-    httpx==0.27.2
+    httpx==0.27.2 \
+    argon2-cffi==25.1.0
 
 # Create non-root runner user
 RUN useradd -m -u 1000 runner

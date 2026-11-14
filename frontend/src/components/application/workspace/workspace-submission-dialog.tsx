@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { type Challenge } from "@/data/challenges";
 import {
   recordClientSubmission,
@@ -64,6 +65,8 @@ export function WorkspaceSubmissionDialog({
   const router = useRouter();
   const [phase, setPhase] = useState<SubmissionPhase>("confirm");
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [submissionId, setSubmissionId] = useState<string>(DEMO_ASSESSMENT_REPORT.submissionId);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const timeoutsRef = useRef<NodeJS.Timeout[]>([]);
 
   const handleClose = useCallback(() => {
@@ -71,6 +74,7 @@ export function WorkspaceSubmissionDialog({
     timeoutsRef.current = [];
     setPhase("confirm");
     setCurrentStepIndex(0);
+    setErrorMessage(null);
     onClose();
   }, [onClose]);
 
@@ -95,29 +99,57 @@ export function WorkspaceSubmissionDialog({
 
   if (!isOpen) return null;
 
-  const handleConfirmSubmit = () => {
+  const handleConfirmSubmit = async () => {
     if (phase !== "confirm") return;
     setPhase("processing");
+    setErrorMessage(null);
     setCurrentStepIndex(0);
 
     // Staged progression with clean timeouts
-    const step1 = setTimeout(() => setCurrentStepIndex(1), 500);
-    const step2 = setTimeout(() => setCurrentStepIndex(2), 1000);
-    const step3 = setTimeout(() => {
+    const step1 = setTimeout(() => setCurrentStepIndex(1), 400);
+    const step2 = setTimeout(() => setCurrentStepIndex(2), 800);
+    timeoutsRef.current.push(step1, step2);
+
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/workspace/${sessionId}/submit`, {
+        method: "POST",
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ detail: "Submission request failed." }));
+        const msg =
+          typeof errData.detail === "string"
+            ? errData.detail
+            : "Submission validation failed. Please check test execution results.";
+        setErrorMessage(msg);
+        setPhase("error");
+        return;
+      }
+
+      const data = await res.json();
+      const realSubId = data.submission_id || DEMO_ASSESSMENT_REPORT.submissionId;
+      setSubmissionId(realSubId);
       setCurrentStepIndex(3);
       setPhase("success");
 
       // Record client submission state in localStorage with documents snapshot
-      recordClientSubmission(sessionId, DEMO_ASSESSMENT_REPORT.submissionId, documents);
+      recordClientSubmission(sessionId, realSubId, documents);
 
       // Auto-redirect to assessment results after short confirmation
       const redirect = setTimeout(() => {
-        router.push(`/app/results/${DEMO_ASSESSMENT_REPORT.submissionId}`);
-      }, 700);
+        router.replace(`/app/results/${realSubId}`);
+      }, 900);
       timeoutsRef.current.push(redirect);
-    }, 1600);
-
-    timeoutsRef.current.push(step1, step2, step3);
+    } catch {
+      // Local offline fallback
+      recordClientSubmission(sessionId, DEMO_ASSESSMENT_REPORT.submissionId, documents);
+      setCurrentStepIndex(3);
+      setPhase("success");
+      const redirect = setTimeout(() => {
+        router.replace(`/app/results/${DEMO_ASSESSMENT_REPORT.submissionId}`);
+      }, 900);
+      timeoutsRef.current.push(redirect);
+    }
   };
 
   return (
@@ -137,11 +169,13 @@ export function WorkspaceSubmissionDialog({
                 ? "Submit Challenge Solution"
                 : phase === "processing"
                 ? "Processing Demonstration Submission"
+                : phase === "error"
+                ? "Submission Notice"
                 : "Submission Completed"}
             </h3>
           </div>
 
-          {phase === "confirm" && (
+          {(phase === "confirm" || phase === "success" || phase === "error") && (
             <button
               onClick={handleClose}
               aria-label="Close dialog"
@@ -269,15 +303,62 @@ export function WorkspaceSubmissionDialog({
               <p className="text-xs text-zinc-400 max-w-sm font-sans">
                 Your demonstration assessment report is ready. Redirecting to evaluation scorecard...
               </p>
-              <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-mono animate-pulse pt-2">
-                <span>Opening /app/results/{DEMO_ASSESSMENT_REPORT.submissionId}</span>
+              <Link
+                href={`/app/results/${submissionId}`}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-emerald-400 hover:text-emerald-300 font-mono bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-800/80 transition-colors pt-2 cursor-pointer"
+              >
+                <span>Opening /app/results/{submissionId}</span>
                 <ArrowRight className="size-3.5" />
+              </Link>
+            </div>
+          )}
+
+          {/* D. Error Phase */}
+          {phase === "error" && (
+            <div className="py-6 flex flex-col items-center text-center space-y-3">
+              <div className="size-12 rounded-full bg-red-950/60 border border-red-800 flex items-center justify-center text-red-400">
+                <ShieldAlert className="size-6" />
               </div>
+              <h4 className="text-sm font-semibold text-foreground">
+                Submission Notice
+              </h4>
+              <p className="text-xs text-zinc-300 max-w-sm font-sans leading-relaxed">
+                {errorMessage || "Submission validation could not be completed."}
+              </p>
             </div>
           )}
         </div>
 
         {/* Dialog Footer Actions */}
+        {phase === "success" && (
+          <div className="flex items-center justify-between px-5 py-3.5 border-t border-border/60 bg-zinc-950/40">
+            <button
+              onClick={handleClose}
+              className="px-3 py-1.5 rounded-md text-xs font-medium text-zinc-400 hover:text-foreground hover:bg-white/[0.06] transition-colors"
+            >
+              Stay in Workspace
+            </button>
+            <Link
+              href={`/app/results/${submissionId}`}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-medium bg-foreground text-background hover:bg-zinc-200 transition-colors cursor-pointer"
+            >
+              <span>View Assessment Report</span>
+              <ArrowRight className="size-3.5" />
+            </Link>
+          </div>
+        )}
+
+        {phase === "error" && (
+          <div className="flex items-center justify-end gap-2.5 px-5 py-3.5 border-t border-border/60 bg-zinc-950/40">
+            <button
+              onClick={handleClose}
+              className="px-3.5 py-1.5 rounded-md text-xs font-medium bg-foreground text-background hover:bg-zinc-200 transition-colors cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         {phase === "confirm" && (
           <div className="flex items-center justify-end gap-2.5 px-5 py-3.5 border-t border-border/60 bg-zinc-950/40">
             <button

@@ -10,6 +10,7 @@ import {
 import {
   saveWorkspaceState,
   getInitialWorkspaceState,
+  clearWorkspaceState,
   type PersistedDocumentState,
 } from "@/lib/workspace-storage";
 import { OFFICIAL_CHALLENGES } from "@/data/challenges";
@@ -17,6 +18,7 @@ import {
   isSessionSubmitted,
   getStoredSubmission,
   subscribeToSubmissionChanges,
+  clearClientSubmission,
 } from "@/data/assessment";
 import { WorkspaceToolbar } from "./workspace-toolbar";
 import { WorkspaceActivityBar } from "./workspace-activity-bar";
@@ -28,6 +30,7 @@ import { WorkspaceAiAssistant } from "./workspace-ai-assistant";
 import { WorkspaceSubmissionDialog } from "./workspace-submission-dialog";
 import {
   executeSimulatedTests,
+  parsePytestCases,
   type TestExecutionResult,
 } from "@/lib/test-runner";
 import { type TestScenarioId } from "@/data/test-fixtures";
@@ -169,6 +172,17 @@ export function WorkspaceLayout({ sessionId }: WorkspaceLayoutProps) {
     return Object.values(documents).filter((d) => d.isModified).length;
   }, [documents]);
 
+  // Set of modified file paths for visual explorer indicators
+  const modifiedFilePaths = useMemo(() => {
+    const set = new Set<string>();
+    Object.entries(documents).forEach(([filePath, doc]) => {
+      if (doc.isModified) {
+        set.add(filePath);
+      }
+    });
+    return set;
+  }, [documents]);
+
   // Mobile view selector: "editor" | "files" | "terminal" | "tests" | "problem" | "assistant"
   const [mobileView, setMobileView] = useState<
     "editor" | "files" | "terminal" | "tests" | "problem" | "assistant"
@@ -183,6 +197,9 @@ export function WorkspaceLayout({ sessionId }: WorkspaceLayoutProps) {
     };
   }, []);
 
+  // Track authoritative file revisions to enforce optimistic concurrency control
+  const fileRevisionsRef = useRef<Record<string, number>>({});
+
   // Function to refresh documents from backend disk workspace
   const refreshBackendFiles = React.useCallback(async () => {
     try {
@@ -192,7 +209,10 @@ export function WorkspaceLayout({ sessionId }: WorkspaceLayoutProps) {
         if (data.documents) {
           setDocuments((prev) => {
             const updated = { ...prev };
-            for (const [path, doc] of Object.entries<{ content: string }>(data.documents)) {
+            for (const [path, doc] of Object.entries<{ content: string; revision?: number }>(data.documents)) {
+              if (typeof doc.revision === "number") {
+                fileRevisionsRef.current[path] = doc.revision;
+              }
               const original = INITIAL_WORKSPACE_FILES[path]?.content ?? "";
               updated[path] = {
                 content: doc.content,
@@ -213,6 +233,20 @@ export function WorkspaceLayout({ sessionId }: WorkspaceLayoutProps) {
     fetch(`http://localhost:8000/api/v1/workspace/${targetSessionId}/init`, { method: "POST" })
       .then(() => refreshBackendFiles())
       .catch(() => {});
+  }, [targetSessionId, refreshBackendFiles]);
+
+  // Handler: Full session reset (clears submission lock and resets workspace storage)
+  const handleResetSession = React.useCallback(async () => {
+    try {
+      clearClientSubmission(targetSessionId);
+      clearWorkspaceState(targetSessionId);
+      await fetch(`http://localhost:8000/api/v1/workspace/${targetSessionId}/reset`, { method: "POST" });
+      await refreshBackendFiles();
+    } catch {
+      clearClientSubmission(targetSessionId);
+      clearWorkspaceState(targetSessionId);
+      await refreshBackendFiles();
+    }
   }, [targetSessionId, refreshBackendFiles]);
 
   // Handler: Execute tests via real backend runner or fallback simulation
@@ -252,6 +286,7 @@ export function WorkspaceLayout({ sessionId }: WorkspaceLayoutProps) {
         const data = await res.json();
         const logs = data.stdout || data.stderr || "No test output returned.";
         setTerminalStream(logs);
+        const parsedCases = parsePytestCases(logs);
         const passedCount = typeof data.passed_tests === "number" ? data.passed_tests : (data.passed ? 6 : 0);
         const totalCount = typeof data.total_tests === "number" ? data.total_tests : 6;
         const durationMs = typeof data.duration_seconds === "number" ? Math.round(data.duration_seconds * 1000) : 1000;
@@ -262,7 +297,7 @@ export function WorkspaceLayout({ sessionId }: WorkspaceLayoutProps) {
           failedCount: Math.max(0, totalCount - passedCount),
           totalCount,
           durationMs,
-          testCases: [],
+          testCases: parsedCases,
           rawLogs: logs.split("\n"),
           startedAt: runStartTime,
           completedAt: Date.now(),
@@ -340,12 +375,33 @@ export function WorkspaceLayout({ sessionId }: WorkspaceLayoutProps) {
       },
     }));
 
-    // Debounced sync to backend workspace storage
+    // Debounced sync to backend workspace storage with optimistic revision concurrency
+    const currentBaseRevision = fileRevisionsRef.current[filePath] ?? 1;
+
     fetch(`http://localhost:8000/api/v1/workspace/${targetSessionId}/files`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: filePath, content: newContent }),
-    }).catch(() => {});
+      body: JSON.stringify({
+        path: filePath,
+        content: newContent,
+        base_revision: currentBaseRevision,
+      }),
+    })
+      .then(async (res) => {
+        if (res.status === 409) {
+          // Stale edit conflict: Agent or backend modified file concurrently
+          const conflict = await res.json().catch(() => ({}));
+          console.warn("[Codevo] Revision conflict on save (newer Agent change detected):", conflict);
+          // Refresh authoritative backend state to prevent stale overwrite
+          await refreshBackendFiles();
+        } else if (res.ok) {
+          const resData = await res.json().catch(() => ({}));
+          if (typeof resData.revision === "number") {
+            fileRevisionsRef.current[filePath] = resData.revision;
+          }
+        }
+      })
+      .catch(() => {});
   };
 
   return (
@@ -362,6 +418,7 @@ export function WorkspaceLayout({ sessionId }: WorkspaceLayoutProps) {
         isSubmitted={isSubmitted}
         submissionId={submissionRecord?.submissionId}
         onSubmit={() => setSubmissionDialogOpen(true)}
+        onResetSession={handleResetSession}
       />
 
       {/* 2. Mobile View Switcher (Visible on < md screens) */}
@@ -473,6 +530,7 @@ export function WorkspaceLayout({ sessionId }: WorkspaceLayoutProps) {
             tree={WORKSPACE_FILE_TREE}
             activeFilePath={activeFile?.path || ""}
             onSelectFile={handleSelectFile}
+            modifiedFilePaths={modifiedFilePaths}
             className="w-full md:w-56 lg:w-60"
           />
         </div>
@@ -500,6 +558,7 @@ export function WorkspaceLayout({ sessionId }: WorkspaceLayoutProps) {
                 onSelectTab={handleSelectTab}
                 onCloseTab={handleCloseTab}
                 onContentChange={handleContentChange}
+                originalContent={activeFile ? INITIAL_WORKSPACE_FILES[activeFile.path]?.content : undefined}
                 readOnly={isSubmitted}
               />
             ) : (
@@ -570,8 +629,11 @@ export function WorkspaceLayout({ sessionId }: WorkspaceLayoutProps) {
             onFilesChanged={refreshBackendFiles}
             onTestExecuted={(output, passed) => {
               setTerminalStream(output);
-              const totalCount = 6;
-              const passedCount = passed ? 6 : 0;
+              const parsedCases = parsePytestCases(output);
+              const totalCount = parsedCases.length > 0 ? parsedCases.length : 6;
+              const passedCount = parsedCases.length > 0
+                ? parsedCases.filter((c) => c.status === "passed").length
+                : (passed ? 6 : 0);
               setTestResult({
                 scenarioId: selectedScenario,
                 status: passed ? "passed" : "failed",
@@ -579,7 +641,7 @@ export function WorkspaceLayout({ sessionId }: WorkspaceLayoutProps) {
                 failedCount: totalCount - passedCount,
                 totalCount,
                 durationMs: 2750,
-                testCases: [],
+                testCases: parsedCases,
                 rawLogs: output.split("\n"),
                 startedAt: Date.now() - 2750,
                 completedAt: Date.now(),

@@ -19,6 +19,7 @@ import {
   Info,
   FileText,
   ArrowRight,
+  RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +34,7 @@ interface WorkspaceToolbarProps {
   isSubmitted?: boolean;
   submissionId?: string;
   onSubmit?: () => void;
+  onResetSession?: () => void;
 }
 
 export function WorkspaceToolbar({
@@ -46,6 +48,7 @@ export function WorkspaceToolbar({
   isSubmitted = false,
   submissionId,
   onSubmit,
+  onResetSession,
 }: WorkspaceToolbarProps) {
   const [demoMenuOpen, setDemoMenuOpen] = useState(false);
   const demoMenuRef = useRef<HTMLDivElement>(null);
@@ -102,41 +105,50 @@ export function WorkspaceToolbar({
         {/* Demo Session Pill & Evaluator Scenarios Dropdown (Refinement 2) */}
         <div className="relative hidden lg:block" ref={demoMenuRef}>
           <button
-            onClick={() => !isSubmitted && setDemoMenuOpen(!demoMenuOpen)}
-            disabled={isSubmitted}
+            onClick={() => setDemoMenuOpen(!demoMenuOpen)}
             title={
-              isSubmitted
-                ? "Session is submitted. Demo options are locked."
-                : sessionId
-                ? `Demo session (${sessionId}): Development-only options for previewing test outcomes`
+              sessionId
+                ? `Demo session (${sessionId}): Development and reset options`
                 : "Development-only options for previewing test outcomes"
             }
             className={cn(
-              "flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-mono transition-colors",
+              "flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-mono transition-colors cursor-pointer",
               isSubmitted
-                ? "border-border/40 bg-secondary/30 text-zinc-500 cursor-not-allowed"
+                ? "border-emerald-800/80 bg-emerald-950/40 text-emerald-300 hover:border-emerald-700"
                 : "border-border/80 bg-secondary/70 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
             )}
           >
-            <span className={cn("size-1.5 rounded-full", isSubmitted ? "bg-zinc-600" : "bg-amber-400/80")} />
-            <span>{isSubmitted ? "Session Submitted" : "Demo Session"}</span>
-            {!isSubmitted && (
-              <>
-                <SlidersHorizontal className="size-2.5 ml-0.5 text-zinc-500" />
-                <ChevronDown className="size-2 text-zinc-500" />
-              </>
-            )}
+            <span className={cn("size-1.5 rounded-full", isSubmitted ? "bg-emerald-400" : "bg-amber-400/80")} />
+            <span>{isSubmitted ? "Submitted (Options)" : "Demo Session"}</span>
+            <SlidersHorizontal className="size-2.5 ml-0.5 text-zinc-500" />
+            <ChevronDown className="size-2 text-zinc-500" />
           </button>
 
           {/* Evaluator Scenario Selector Menu */}
           {demoMenuOpen && (
             <div className="absolute right-0 mt-1.5 w-64 p-2 bg-[#101014] border border-border rounded-lg shadow-2xl z-50 text-xs font-mono space-y-1.5">
-              <div className="flex items-center gap-1 text-[10px] text-zinc-400 font-semibold uppercase tracking-wider px-1 pb-1 border-b border-border/50">
-                <Info className="size-3 text-amber-400" />
-                <span>Demo Fixture Outcome</span>
+              <div className="flex items-center justify-between text-[10px] text-zinc-400 font-semibold uppercase tracking-wider px-1 pb-1 border-b border-border/50">
+                <div className="flex items-center gap-1">
+                  <Info className="size-3 text-amber-400" />
+                  <span>Demo Options</span>
+                </div>
               </div>
+
+              {onResetSession && (
+                <button
+                  onClick={() => {
+                    onResetSession();
+                    setDemoMenuOpen(false);
+                  }}
+                  className="w-full text-left p-1.5 rounded text-[11px] transition-colors flex items-center gap-1.5 text-amber-300 hover:bg-amber-950/40 border border-amber-900/40 hover:border-amber-700/60 font-semibold mb-2"
+                >
+                  <RotateCcw className="size-3 text-amber-400 shrink-0" />
+                  <span>Reset Session (Start Fresh)</span>
+                </button>
+              )}
+
               <p className="text-[10px] text-zinc-500 px-1 leading-normal">
-                Development-only control. Simulates different test outcomes without executing code.
+                Simulate different test outcomes without executing code:
               </p>
 
               {(Object.keys(TEST_SCENARIOS) as TestScenarioId[]).map((key) => {

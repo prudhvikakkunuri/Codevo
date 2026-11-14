@@ -1,7 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { DEMO_ASSESSMENT_REPORT } from "@/data/assessment";
+import { DEMO_ASSESSMENT_REPORT, type AssessmentReport } from "@/data/assessment";
 import { AssessmentHeader } from "@/components/application/assessment/assessment-header";
 import { AssessmentScoreCard } from "@/components/application/assessment/assessment-score-card";
 import { AssessmentTestSummary } from "@/components/application/assessment/assessment-test-summary";
@@ -18,17 +18,29 @@ interface ResultsPageProps {
 export default async function ResultsPage({ params }: ResultsPageProps) {
   const { submissionId } = await params;
 
-  // In Phase 1 frontend preview, support DEMO_ASSESSMENT_REPORT
+  let report: AssessmentReport = DEMO_ASSESSMENT_REPORT;
+  let isVerifiedBackendReport = false;
+
+  try {
+    const res = await fetch(`http://127.0.0.1:8000/api/v1/submissions/${submissionId}`, {
+      cache: "no-store",
+    });
+    if (res.ok) {
+      report = (await res.json()) as AssessmentReport;
+      isVerifiedBackendReport = true;
+    }
+  } catch {
+    // Backend offline or local network error; fallback gracefully
+  }
+
   const isDemoMatch =
     submissionId === DEMO_ASSESSMENT_REPORT.submissionId ||
     submissionId === "latest" ||
     submissionId.startsWith("sub-");
 
-  if (!isDemoMatch) {
+  if (!isVerifiedBackendReport && !isDemoMatch) {
     notFound();
   }
-
-  const report = DEMO_ASSESSMENT_REPORT;
 
   return (
     <div className="space-y-8 pb-16">
@@ -38,6 +50,7 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
         challengeTitle={report.challengeTitle}
         submissionId={report.submissionId}
         submittedAt={report.submittedAt}
+        isDemoAssessment={report.isDemoAssessment}
       />
 
       {/* 2. Score Overview Hero Card */}

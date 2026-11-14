@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
@@ -185,16 +186,16 @@ export function ChallengeCatalogue() {
                   <span className="text-xs font-mono text-zinc-400 font-medium">
                     {challenge.category}
                   </span>
-                  <a
-                    href="#cta"
+                  <Link
+                    href={challenge.id === "CI-001" ? "/app/workspace/ci-001-demo" : "/app"}
                     className={buttonVariants({
                       size: "xs",
                       variant: "outline",
                       className: "gap-1 text-xs font-medium",
                     })}
                   >
-                    Preview <ArrowRight className="size-3" />
-                  </a>
+                    {challenge.id === "CI-001" ? "Launch" : "Preview"} <ArrowRight className="size-3" />
+                  </Link>
                 </CardFooter>
               </Card>
             );

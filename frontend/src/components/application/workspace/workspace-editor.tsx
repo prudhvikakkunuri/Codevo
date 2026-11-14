@@ -3,7 +3,8 @@
 import React, { useRef, useEffect } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
 import type * as monacoType from "monaco-editor";
-import { type WorkspaceFile } from "@/data/workspace";
+import { type WorkspaceFile, INITIAL_WORKSPACE_FILES } from "@/data/workspace";
+import { computeChangedLineNumbers } from "@/lib/line-diff";
 import { X, Circle, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +20,7 @@ interface WorkspaceEditorProps {
   onSelectTab: (filePath: string) => void;
   onCloseTab: (filePath: string) => void;
   onContentChange: (filePath: string, content: string) => void;
+  originalContent?: string;
   readOnly?: boolean;
   className?: string;
 }
@@ -29,10 +31,13 @@ export function WorkspaceEditor({
   onSelectTab,
   onCloseTab,
   onContentChange,
+  originalContent,
   readOnly = false,
   className,
 }: WorkspaceEditorProps) {
   const editorRef = useRef<monacoType.editor.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<typeof monacoType | null>(null);
+  const decorationsRef = useRef<string[]>([]);
 
   // Synchronize readOnly options whenever prop changes
   useEffect(() => {
@@ -44,8 +49,47 @@ export function WorkspaceEditor({
     }
   }, [readOnly]);
 
+  // Synchronize external file modifications (e.g. from AI Agent patches or backend refresh) into Monaco model
+  useEffect(() => {
+    if (!editorRef.current || !activeFile) return;
+    const model = editorRef.current.getModel();
+    if (model) {
+      const currentVal = model.getValue();
+      if (currentVal !== activeFile.content) {
+        const viewState = editorRef.current.saveViewState();
+        model.setValue(activeFile.content);
+        if (viewState) {
+          editorRef.current.restoreViewState(viewState);
+        }
+      }
+    }
+  }, [activeFile]);
+
+  // Update changed-line gutter decorations against baseline
+  useEffect(() => {
+    if (!editorRef.current || !monacoRef.current || !activeFile) return;
+
+    const baseline = originalContent ?? INITIAL_WORKSPACE_FILES[activeFile.path]?.content ?? "";
+    const current = activeFile.content;
+    const changedLineNumbers = computeChangedLineNumbers(baseline, current);
+
+    const newDecorations = changedLineNumbers.map((lineNum) => ({
+      range: new monacoRef.current!.Range(lineNum, 1, lineNum, 1),
+      options: {
+        isWholeLine: false,
+        linesDecorationsClassName: "codevo-diff-gutter-bar",
+      },
+    }));
+
+    decorationsRef.current = editorRef.current.deltaDecorations(
+      decorationsRef.current,
+      newDecorations
+    );
+  }, [activeFile, originalContent]);
+
   const handleEditorMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
+    monacoRef.current = monaco;
 
     if (readOnly) {
       editor.updateOptions({
@@ -155,7 +199,7 @@ export function WorkspaceEditor({
             height="100%"
             path={activeFile.path}
             language={activeFile.language}
-            defaultValue={activeFile.content}
+            value={activeFile.content}
             onChange={(value) => {
               if (readOnly) return;
               onContentChange(activeFile.path, value || "");

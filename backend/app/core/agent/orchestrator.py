@@ -16,16 +16,78 @@ Your mission is to fix the defects in CI-001 so all test assertions pass.
 
 Target Fixes:
 1. In `app/utils/security.py`:
-   - Change `return hash_password(plain_password) != hashed_password` to `return hash_password(plain_password) == hashed_password`.
+   - Replace the entire try/except block in `verify_password`:
+     Target:
+     ```python
+     try:
+         # Intentional bug in starter code: inverted verification return values
+         _hasher.verify(hashed_password, plain_password)
+         return False
+     except (VerifyMismatchError, VerificationError, InvalidHashError):
+         return True
+     ```
+     Replacement:
+     ```python
+     try:
+         _hasher.verify(hashed_password, plain_password)
+         return True
+     except (VerifyMismatchError, VerificationError, InvalidHashError):
+         return False
+     ```
 2. In `app/services/authentication.py`:
-   - Add `from fastapi import HTTPException, status`
-   - In `register_user`: if `payload.email in USERS_DB`: raise `HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already registered.")`
-   - In `authenticate_user`: if `not user`: return `{"error": "Invalid credentials"}` (do NOT leak database lookup details).
+   - Add FastAPI imports without removing typing imports:
+     Target:
+     ```python
+     from typing import Dict, Optional
+     ```
+     Replacement:
+     ```python
+     from typing import Dict, Optional
+     from fastapi import HTTPException, status
+     ```
+   - In `register_user`, check for duplicate email:
+     Target:
+     ```python
+     user_id = str(uuid.uuid4())
+     ```
+     Replacement:
+     ```python
+     if payload.email in USERS_DB:
+         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already registered.")
+     user_id = str(uuid.uuid4())
+     ```
+   - In `authenticate_user`, sanitize database lookup error:
+     Target:
+     ```python
+     return {"error": f"Internal database lookup failed: {email} not found"}
+     ```
+     Replacement:
+     ```python
+     return {"error": "Invalid credentials"}
+     ```
 
-Execution workflow:
-1. Call `patch_file` on `app/utils/security.py` replacing `!= hashed_password` with `== hashed_password`.
-2. Call `patch_file` on `app/services/authentication.py` to add `from fastapi import HTTPException, status`, raise 409 on duplicate email, and sanitize the error response.
-3. Call `run_tests` to verify that all 6 integration tests pass.
+CRITICAL EXECUTION ORDER:
+- Step 1: Call `patch_file` to fix `app/utils/security.py` (ensure verify_password returns True in try and False in except).
+- Step 2: Call `patch_file` to fix `app/services/authentication.py` (FastAPI imports, duplicate check, sanitized error).
+- Step 3: Only after BOTH files are patched, call `run_tests` to verify all 6 tests pass.
+- DO NOT invoke `run_tests` until both files are patched!
+- NEVER include diff markers like `+` or `-` in replacement text.
+"""
+
+CHAT_SYSTEM_PROMPT = """You are the Codevo Senior AI Engineering Interview Assistant operating in Chat Mode.
+Your role is to act as a conversational pair programmer, technical mentor, and code reviewer.
+
+Capabilities in Chat Mode:
+- Explain challenge architecture, defects, and core concepts.
+- Answer candidate technical and programming questions.
+- Explain pytest error output, assertion errors, and stack traces.
+- Suggest clean solutions, best practices, and code snippets formatted in markdown.
+- Help candidates understand security standards (e.g. Argon2id, HTTP 409 conflict, sanitizing credential errors).
+
+Strict Boundaries in Chat Mode:
+- You operate strictly in an advisory read-only mode.
+- You CANNOT call tools, edit or patch files, or execute tests on the workspace.
+- Provide clear, typed explanations and illustrative code snippets in markdown (e.g., ```python ... ```) so the candidate can learn and implement changes directly.
 """
 
 
@@ -61,6 +123,60 @@ class AgentOrchestrator:
         self.max_correction_iterations = max_correction_iterations
         self.max_turns = max_turns
 
+    async def chat(
+        self,
+        session_id: str,
+        user_prompt: str,
+    ) -> AsyncGenerator[TimelineEvent, None]:
+        """Execute conversational pair programming interaction without tools or workspace write privileges."""
+        logger.info("Starting chat mode query for session '%s': %s", session_id, user_prompt[:80])
+
+        yield TimelineEvent(
+            event_type="thinking",
+            content="Analyzing your question in Chat Mode...",
+            data={"session_id": session_id, "mode": "chat"},
+        )
+
+        messages = [
+            ChatMessage(role="system", content=CHAT_SYSTEM_PROMPT),
+            ChatMessage(role="user", content=user_prompt),
+        ]
+
+        try:
+            model_res = await self.ai_provider.complete(
+                messages=messages,
+                tools=None,
+                tool_choice="none",
+            )
+        except Exception as exc:
+            logger.error("AI Provider error in chat mode: %s", exc)
+            yield TimelineEvent(
+                event_type="error",
+                content=f"AI chat request failed: {exc}",
+                data={"session_id": session_id},
+            )
+            return
+
+        if model_res.reasoning:
+            yield TimelineEvent(
+                event_type="thinking",
+                content=model_res.reasoning,
+                data={"session_id": session_id},
+            )
+
+        if model_res.content:
+            yield TimelineEvent(
+                event_type="message",
+                content=model_res.content,
+                data={"session_id": session_id},
+            )
+
+        yield TimelineEvent(
+            event_type="completed",
+            content="Chat response complete.",
+            data={"session_id": session_id, "mode": "chat"},
+        )
+
     async def run(
         self,
         session_id: str,
@@ -79,6 +195,7 @@ class AgentOrchestrator:
         tests_passed = False
         files_modified = set()
         final_test_output = ""
+        read_counts: dict[str, int] = {}
 
         yield TimelineEvent(
             event_type="thinking",
@@ -89,22 +206,27 @@ class AgentOrchestrator:
         for turn in range(self.max_turns):
             logger.info("Agent turn %d for session '%s'", turn + 1, session_id)
             import asyncio
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(1.0)
 
-            # Guide the agent to run tests once files are patched
+            # Guide the agent to run tests once target files are patched
             if len(files_modified) >= 2 and test_attempts == 0:
                 messages.append(
                     ChatMessage(
                         role="user",
-                        content="Both security.py and authentication.py have been updated with your fixes. Now call run_tests to verify against the test suite.",
+                        content="Both security.py and authentication.py have been patched with your fixes. Now invoke run_tests to verify against the trusted test suite.",
                     )
                 )
 
-            # Compact older tool messages to stay well within Groq TPM quota
-            if len(messages) > 6:
-                for m in messages[2:-3]:
-                    if m.role == "tool" and m.content and len(m.content) > 150:
-                        m.content = json.dumps({"status": "inspected"})
+            # Only trim excessively large test stdout runs to maintain token budget, preserving file read contents
+            for m in messages:
+                if m.role == "tool" and m.name == "run_tests" and m.content and len(m.content) > 1500:
+                    try:
+                        parsed = json.loads(m.content)
+                        if "stdout" in parsed and len(parsed["stdout"]) > 800:
+                            parsed["stdout"] = parsed["stdout"][:400] + "\n...[truncated test logs]...\n" + parsed["stdout"][-400:]
+                            m.content = json.dumps(parsed)
+                    except Exception:
+                        pass
 
             try:
                 model_res = await self.ai_provider.complete(
@@ -134,10 +256,24 @@ class AgentOrchestrator:
                     content=model_res.content,
                 )
 
-            # If no tool calls and no more work, break
+            # If no tool calls in this turn
             if not model_res.tool_calls:
-                # Add assistant message to history
                 messages.append(ChatMessage(role="assistant", content=model_res.content or ""))
+                # If tests haven't passed or files are missing fixes, guide agent to complete remaining work
+                if not tests_passed and test_attempts < self.max_correction_iterations and turn < self.max_turns - 1:
+                    missing = []
+                    if "app/utils/security.py" not in files_modified:
+                        missing.append("app/utils/security.py")
+                    if "app/services/authentication.py" not in files_modified:
+                        missing.append("app/services/authentication.py")
+
+                    if missing:
+                        hint = f"Tests cannot pass yet because {', '.join(missing)} has not been patched. Call patch_file on {missing[0]} now with the required fix, then re-run tests."
+                    else:
+                        hint = "Tests are still failing. Please inspect the test failure output, apply the necessary correction with patch_file, and re-run tests."
+
+                    messages.append(ChatMessage(role="user", content=hint))
+                    continue
                 break
 
             # Add assistant message with tool calls to history
@@ -166,12 +302,21 @@ class AgentOrchestrator:
                     arguments_json=fn_args,
                 )
 
-                # Special event emissions for file edits and test results
+                # Special event emissions for file edits, read loops, and test results
+                if fn_name == "read_file":
+                    rf_path = tool_output.get("path") or ""
+                    read_counts[rf_path] = read_counts.get(rf_path, 0) + 1
+                    if read_counts[rf_path] >= 3 and rf_path not in files_modified:
+                        tool_output["notice"] = f"You have already inspected '{rf_path}'. Proceed directly to applying the required patch with patch_file."
+
                 if fn_name in ("edit_file", "patch_file") and tool_output.get("status") == "success":
-                    files_modified.add(tool_output.get("path"))
+                    path_mod = tool_output.get("path")
+                    if path_mod:
+                        files_modified.add(path_mod)
+                        read_counts[path_mod] = 0
                     yield TimelineEvent(
                         event_type="file_edit",
-                        content=f"Updated {tool_output.get('path')}",
+                        content=f"Updated {path_mod}",
                         data=tool_output,
                     )
 

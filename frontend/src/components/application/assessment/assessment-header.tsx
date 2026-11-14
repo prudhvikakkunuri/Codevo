@@ -10,6 +10,7 @@ interface AssessmentHeaderProps {
   challengeTitle: string;
   submissionId: string;
   submittedAt: string;
+  isDemoAssessment?: boolean;
 }
 
 const emptySubscribe = () => () => {};
@@ -19,10 +20,11 @@ export function AssessmentHeader({
   challengeTitle,
   submissionId,
   submittedAt,
+  isDemoAssessment = false,
 }: AssessmentHeaderProps) {
   const currentTimestamp = useSyncExternalStore(
     emptySubscribe,
-    () => getStoredSubmission("ci-001-demo")?.submittedAt ?? submittedAt,
+    () => (isDemoAssessment ? (getStoredSubmission("ci-001-demo")?.submittedAt ?? submittedAt) : submittedAt),
     () => submittedAt
   );
 
@@ -73,22 +75,31 @@ export function AssessmentHeader({
           </p>
         </div>
 
-        {/* Prominent Simulated Assessment Badge */}
+        {/* Status Badge */}
         <div className="flex items-center gap-2 self-start sm:self-auto">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-amber-900/60 bg-amber-950/30 text-amber-300 font-mono text-xs font-semibold">
-            <span className="size-1.5 rounded-full bg-amber-400" />
-            <span>DEMO ASSESSMENT (SIMULATED)</span>
-          </span>
+          {isDemoAssessment ? (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-amber-900/60 bg-amber-950/30 text-amber-300 font-mono text-xs font-semibold">
+              <span className="size-1.5 rounded-full bg-amber-400" />
+              <span>DEMO ASSESSMENT (SIMULATED)</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-emerald-900/60 bg-emerald-950/30 text-emerald-300 font-mono text-xs font-semibold">
+              <span className="size-1.5 rounded-full bg-emerald-400" />
+              <span>VERIFIED SUBMISSION</span>
+            </span>
+          )}
         </div>
       </div>
 
-      {/* Disclaimer Banner */}
-      <div className="p-3 bg-secondary/40 border border-border/60 rounded-lg flex items-start gap-2.5 text-xs font-mono text-zinc-400">
-        <Info className="size-4 shrink-0 text-amber-400 mt-0.5" />
-        <p className="leading-relaxed">
-          <strong className="text-zinc-200">Phase 1 Frontend Demonstration:</strong> All scorecard metrics, category weights, test summaries, and qualitative observations on this page are deterministic demo fixtures. Live evaluator execution and AI evaluation will be connected in Phase 6.
-        </p>
-      </div>
+      {/* Disclaimer Banner - Only for Demo Assessments */}
+      {isDemoAssessment && (
+        <div className="p-3 bg-secondary/40 border border-border/60 rounded-lg flex items-start gap-2.5 text-xs font-mono text-zinc-400">
+          <Info className="size-4 shrink-0 text-amber-400 mt-0.5" />
+          <p className="leading-relaxed">
+            <strong className="text-zinc-200">Phase 1 Frontend Demonstration:</strong> All scorecard metrics, category weights, test summaries, and qualitative observations on this page are deterministic demo fixtures. Live evaluator execution and AI evaluation will be connected in Phase 6.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

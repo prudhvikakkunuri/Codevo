@@ -8,9 +8,10 @@ from pydantic import BaseModel, Field
 
 from app.core.agent.orchestrator import AgentOrchestrator, TimelineEvent
 from app.core.agent.tools import AgentToolDispatcher
-from app.core.agent.workspace_manager import SessionWorkspaceManager
+from app.core.agent.workspace_manager import RevisionConflictError, SessionWorkspaceManager
 from app.core.ai.groq_adapter import GroqProvider
 from app.core.config import Settings, get_settings
+from app.core.evaluator.submission_manager import SubmissionError, SubmissionManager
 from app.core.runner.isolated_runner import IsolatedTestRunner, TestRunResult
 
 router = APIRouter()
@@ -18,6 +19,7 @@ router = APIRouter()
 # Shared singleton services for local demo sprint
 workspace_manager = SessionWorkspaceManager()
 test_runner = IsolatedTestRunner()
+submission_manager = SubmissionManager(workspace_manager.base_storage_dir)
 tool_dispatcher = AgentToolDispatcher(workspace_manager=workspace_manager, test_runner=test_runner)
 
 
@@ -43,6 +45,7 @@ def get_agent_orchestrator(settings: Settings = Depends(get_settings)) -> AgentO
 class FileUpdateRequest(BaseModel):
     path: str
     content: str
+    base_revision: int | None = None
 
 
 class AgentPromptRequest(BaseModel):
@@ -59,12 +62,68 @@ async def init_workspace(session_id: str, force_reset: bool = False) -> dict[str
         "workspace_root": str(ws_dir),
         "files_count": len(files),
         "files": files,
+        "is_submitted": workspace_manager.is_session_submitted(session_id),
+        "status": "submitted" if workspace_manager.is_session_submitted(session_id) else "active",
+    }
+
+
+@router.post("/workspace/{session_id}/submit")
+async def submit_workspace(session_id: str) -> dict[str, Any]:
+    """Authoritatively finalize and lock a session into read-only submitted state."""
+    clean_id = "".join(c for c in session_id if c.isalnum() or c in ("-", "_")).strip()
+    session_dir = workspace_manager.get_session_dir(clean_id)
+    current_revisions = workspace_manager.get_all_revisions(clean_id)
+
+    # If already submitted and an assessment report exists, return existing report
+    if workspace_manager.is_session_submitted(clean_id):
+        subs = [s for s in submission_manager.list_submissions() if s.sessionId == clean_id]
+        if subs:
+            existing_report = submission_manager.get_submission_report(subs[0].submissionId)
+            if existing_report:
+                return {
+                    "session_id": clean_id,
+                    "status": "submitted",
+                    "submission_id": subs[0].submissionId,
+                    "report": existing_report.model_dump(),
+                }
+
+    try:
+        report = submission_manager.create_submission(clean_id, session_dir, current_revisions)
+        workspace_manager.submit_session(clean_id)
+        return {
+            "session_id": clean_id,
+            "status": "submitted",
+            "submission_id": report.submissionId,
+            "report": report.model_dump(),
+        }
+    except SubmissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process submission: {exc}",
+        )
+
+
+@router.post("/workspace/{session_id}/reset")
+async def reset_workspace(session_id: str) -> dict[str, Any]:
+    """Reset session state back to active and restore starter workspace."""
+    workspace_manager.reset_session(session_id)
+    ws_dir = workspace_manager.initialize_ci001_workspace(session_id, force_reset=True)
+    return {
+        "session_id": session_id,
+        "status": "active",
+        "is_submitted": False,
+        "workspace_root": str(ws_dir),
     }
 
 
 @router.get("/workspace/{session_id}/files")
 async def get_workspace_files(session_id: str) -> dict[str, Any]:
-    """Retrieve all files and contents for Monaco synchronization."""
+    """Retrieve all files and contents with authoritative revisions for Monaco synchronization."""
     files = workspace_manager.list_files(session_id)
     documents: dict[str, dict[str, Any]] = {}
     for f in files:
@@ -75,6 +134,7 @@ async def get_workspace_files(session_id: str) -> dict[str, Any]:
                 "path": rel_path,
                 "content": content,
                 "size": f["size"],
+                "revision": workspace_manager.get_revision(session_id, rel_path),
             }
         except Exception:
             continue
@@ -87,14 +147,32 @@ async def get_workspace_files(session_id: str) -> dict[str, Any]:
 
 @router.put("/workspace/{session_id}/files")
 async def save_workspace_file(session_id: str, payload: FileUpdateRequest) -> dict[str, Any]:
-    """Update a workspace file from Monaco editor."""
+    """Update a workspace file from Monaco editor with optimistic concurrency control."""
+    if workspace_manager.is_session_submitted(session_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Session '{session_id}' has already been submitted and is locked in read-only mode.",
+        )
     try:
         res = workspace_manager.edit_file(
             session_id=session_id,
             relative_path=payload.path,
             new_content=payload.content,
+            base_revision=payload.base_revision,
         )
         return res
+    except RevisionConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "Revision conflict",
+                "message": str(exc),
+                "path": exc.path,
+                "expected_revision": exc.expected_revision,
+                "current_revision": exc.current_revision,
+                "current_content": exc.current_content,
+            },
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -110,8 +188,12 @@ async def run_tests_endpoint(session_id: str) -> dict[str, Any]:
     trusted_tests = backend_dir / "challenges" / "ci-001" / "trusted_tests"
 
     res: TestRunResult = await test_runner.run_tests(ws_dir, trusted_tests, prefer_docker=True)
+    revisions = workspace_manager.get_all_revisions(session_id)
+    test_run = submission_manager.record_test_run(session_id, res, revisions)
+
     return {
         "session_id": session_id,
+        "test_run_id": test_run.id,
         "exit_code": res.exit_code,
         "passed": res.passed,
         "total_tests": res.total_tests,
@@ -119,8 +201,33 @@ async def run_tests_endpoint(session_id: str) -> dict[str, Any]:
         "failed_tests": res.failed_tests,
         "duration_seconds": round(res.duration_seconds, 2),
         "runner_type": res.runner_type,
+        "test_cases": [tc.model_dump() for tc in test_run.testCases],
         "stdout": res.stdout,
         "stderr": res.stderr,
+    }
+
+
+@router.post("/agent/{session_id}/chat")
+async def chat_agent_endpoint(
+    session_id: str,
+    payload: AgentPromptRequest,
+    orchestrator: AgentOrchestrator = Depends(get_agent_orchestrator),
+) -> dict[str, Any]:
+    """Conversational assistant endpoint without workspace modification tools."""
+    events: list[dict[str, Any]] = []
+    final_message = ""
+
+    async for event in orchestrator.chat(session_id, payload.prompt):
+        events.append(event.model_dump())
+        if event.event_type == "message" and event.content:
+            final_message = event.content
+
+    return {
+        "session_id": session_id,
+        "mode": "chat",
+        "prompt": payload.prompt,
+        "message": final_message,
+        "events": events,
     }
 
 
@@ -131,6 +238,11 @@ async def run_agent_endpoint(
     orchestrator: AgentOrchestrator = Depends(get_agent_orchestrator),
 ) -> dict[str, Any]:
     """Run the Agent Orchestrator and return all timeline events."""
+    if workspace_manager.is_session_submitted(session_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Session '{session_id}' has already been submitted and is locked in read-only mode. Agent execution is prohibited.",
+        )
     events: list[dict[str, Any]] = []
     files_modified = set()
     final_passed = False
@@ -161,6 +273,11 @@ async def stream_agent_endpoint(
     orchestrator: AgentOrchestrator = Depends(get_agent_orchestrator),
 ):
     """Server-Sent Events (SSE) streaming of the real-time agent execution timeline."""
+    if workspace_manager.is_session_submitted(session_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Session '{session_id}' has already been submitted and is locked in read-only mode. Agent execution is prohibited.",
+        )
 
     async def event_generator():
         async for event in orchestrator.run(session_id, prompt):
@@ -175,4 +292,24 @@ async def stream_agent_endpoint(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/submissions/{submission_id}")
+async def get_submission_endpoint(submission_id: str) -> dict[str, Any]:
+    """Retrieve authoritative assessment report for a submission."""
+    report = submission_manager.get_submission_report(submission_id)
+    if not report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Submission '{submission_id}' not found.",
+        )
+    return report.model_dump()
+
+
+@router.get("/submissions")
+async def list_submissions_endpoint() -> dict[str, Any]:
+    """List all historical submissions."""
+    records = submission_manager.list_submissions()
+    return {"submissions": [r.model_dump() for r in records]}
+
 

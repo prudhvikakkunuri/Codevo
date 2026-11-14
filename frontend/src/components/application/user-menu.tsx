@@ -2,9 +2,11 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
-import { User, Settings, LogOut, ShieldCheck, ChevronUp, ChevronDown } from "lucide-react";
+import { User as UserIcon, Settings, LogOut, ShieldCheck, ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 
 interface UserMenuProps {
   collapsed?: boolean;
@@ -13,6 +15,24 @@ interface UserMenuProps {
 export function UserMenu({ collapsed = false }: UserMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const { user, logout } = useAuth();
+  const router = useRouter();
+
+  const displayName = user?.fullName || "Candidate Engineer";
+  const displayEmail = user?.email || "candidate@codevo.dev";
+  const initials = displayName
+    .split(" ")
+    .filter(Boolean)
+    .map((n) => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "CE";
+
+  const handleSignOut = async () => {
+    setIsOpen(false);
+    await logout();
+    router.replace("/login");
+  };
 
   // Close when clicking outside
   useEffect(() => {
@@ -61,22 +81,22 @@ export function UserMenu({ collapsed = false }: UserMenuProps) {
         <div className="flex items-center gap-2 min-w-0">
           {/* Avatar with initials */}
           <div className="size-6 rounded-full bg-zinc-800 border border-zinc-700/80 flex items-center justify-center text-[10px] font-mono font-medium text-zinc-200 shrink-0">
-            GU
+            {initials}
           </div>
 
           {!collapsed && (
             <div className="flex flex-col min-w-0">
               <span className="text-xs font-medium text-zinc-200 truncate leading-none">
-                Guest User
+                {displayName}
               </span>
               <span className="text-[10px] font-mono text-zinc-500 truncate mt-0.5">
-                Demo Preview
+                {displayEmail}
               </span>
             </div>
           )}
         </div>
 
-        {!collapsed && (
+          {!collapsed && (
           <div className="text-zinc-500 shrink-0">
             {isOpen ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
           </div>
@@ -91,20 +111,20 @@ export function UserMenu({ collapsed = false }: UserMenuProps) {
           className={cn(
             "absolute z-50 rounded-lg border border-border/80 bg-[#0E0E11] p-1 shadow-2xl backdrop-blur-md animate-in fade-in-0 zoom-in-95",
             collapsed
-              ? "left-full bottom-0 ml-2 w-52"
-              : "bottom-full left-0 mb-2 w-full min-w-[210px]"
+              ? "left-full bottom-0 ml-2 w-56"
+              : "bottom-full left-0 mb-2 w-full min-w-[220px]"
           )}
         >
           {/* User Details Header */}
           <div className="px-2.5 py-2 border-b border-border/50 mb-1">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-foreground">Guest User</span>
-              <Badge variant="outline" className="text-[9px] font-mono px-1 py-0 border-border/70 text-zinc-400">
-                Demo
+              <span className="text-xs font-medium text-foreground truncate max-w-[130px]">{displayName}</span>
+              <Badge variant="outline" className="text-[9px] font-mono px-1 py-0 border-border/70 text-zinc-400 capitalize">
+                {user?.role || "Candidate"}
               </Badge>
             </div>
             <p className="text-[10px] text-zinc-500 truncate mt-0.5 font-mono">
-              guest@codevo.local
+              {displayEmail}
             </p>
           </div>
 
@@ -116,7 +136,7 @@ export function UserMenu({ collapsed = false }: UserMenuProps) {
               role="menuitem"
               className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs text-zinc-300 hover:text-foreground hover:bg-white/[0.05] transition-colors"
             >
-              <User className="size-3.5 text-zinc-400" />
+              <UserIcon className="size-3.5 text-zinc-400" />
               <span>Profile & Account</span>
             </Link>
 
@@ -135,19 +155,27 @@ export function UserMenu({ collapsed = false }: UserMenuProps) {
                 <ShieldCheck className="size-3 text-zinc-500" />
                 BYOK AI Key
               </span>
-              <span className="text-zinc-500">Planned (Milestone 1.9)</span>
+              <span className="text-zinc-500">Configured</span>
             </div>
 
-            <div className="border-t border-border/40 pt-1 mt-1">
+            <div className="border-t border-border/40 pt-1 mt-1 space-y-0.5">
               <Link
                 href="/"
                 onClick={() => setIsOpen(false)}
                 role="menuitem"
                 className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs text-zinc-400 hover:text-foreground hover:bg-white/[0.05] transition-colors"
               >
-                <LogOut className="size-3.5 text-zinc-500" />
-                <span>Back to Landing Page</span>
+                <span>Landing Page</span>
               </Link>
+              <button
+                type="button"
+                onClick={handleSignOut}
+                role="menuitem"
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs text-red-400/90 hover:text-red-300 hover:bg-red-500/[0.08] transition-colors text-left"
+              >
+                <LogOut className="size-3.5" />
+                <span>Sign Out</span>
+              </button>
             </div>
           </div>
         </div>

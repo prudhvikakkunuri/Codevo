@@ -54,38 +54,38 @@ export function WorkspacePreview() {
         </div>
 
         {/* Browser IDE Mockup Shell */}
-        <div className="rounded-xl border border-border bg-card overflow-hidden shadow-2xl">
+        <div className="rounded-xl border border-border bg-card overflow-hidden shadow-2xl max-w-full">
           {/* Top IDE Application Bar */}
-          <div className="flex items-center justify-between border-b border-border bg-[#18181B] px-4 py-2.5">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between border-b border-border bg-[#18181B] px-3 sm:px-4 py-2.5 gap-2">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               {/* Window Dots */}
-              <div className="flex items-center gap-1.5" aria-hidden="true">
+              <div className="hidden sm:flex items-center gap-1.5 shrink-0" aria-hidden="true">
                 <span className="size-3 rounded-full bg-zinc-700" />
                 <span className="size-3 rounded-full bg-zinc-700" />
                 <span className="size-3 rounded-full bg-zinc-700" />
               </div>
-              <div className="h-4 w-px bg-zinc-700" />
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs font-semibold text-foreground">
+              <div className="hidden sm:block h-4 w-px bg-zinc-700 shrink-0" />
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-mono text-xs font-semibold text-foreground truncate">
                   CI-001 · FastAPI Auth Defect
                 </span>
-                <Badge variant="secondary" className="font-mono text-xs px-2 py-0.5 hidden sm:inline-flex">
+                <Badge variant="secondary" className="font-mono text-xs px-2 py-0.5 hidden md:inline-flex shrink-0">
                   Python 3.12
                 </Badge>
               </div>
             </div>
 
             {/* Timer & Action Controls */}
-            <div className="flex items-center gap-2.5">
-              <div className="flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1 text-xs font-mono text-foreground">
-                <Timer className="size-3.5 text-zinc-400" />
+            <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+              <div className="flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 sm:px-3 py-1 text-xs font-mono text-foreground">
+                <Timer className="size-3.5 text-zinc-400 shrink-0" />
                 <span className="font-semibold">38:14</span>
                 <span className="text-zinc-500 hidden sm:inline">remaining</span>
               </div>
               <Button size="xs" variant="outline" className="gap-1 hidden sm:inline-flex text-xs font-medium">
                 <Play className="size-3" /> Run Tests
               </Button>
-              <Button size="xs" variant="default" className="text-xs font-medium">
+              <Button size="xs" variant="default" className="text-xs font-medium shrink-0">
                 Submit Solution
               </Button>
             </div>

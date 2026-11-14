@@ -29,7 +29,7 @@ class IsolatedTestRunner:
     def __init__(
         self,
         docker_image: str = "codevo-runner:3.11",
-        timeout_seconds: float = 15.0,
+        timeout_seconds: float = 30.0,
         memory_limit: str = "512m",
         cpu_limit: str = "1.0",
     ) -> None:
@@ -130,6 +130,13 @@ class IsolatedTestRunner:
             self.memory_limit,
             "--cpus",
             self.cpu_limit,
+            "--user",
+            "1000:1000",
+            "--security-opt",
+            "no-new-privileges:true",
+            "--read-only",
+            "--tmpfs",
+            "/tmp:rw,noexec,nosuid,size=64m",
             "-e",
             "PYTHONPATH=/workspace",
             "-v",

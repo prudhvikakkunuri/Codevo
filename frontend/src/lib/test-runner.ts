@@ -221,3 +221,39 @@ export function executeSimulatedTests(
   return cancel;
 }
 
+/**
+ * Parses raw pytest stdout/stderr from Docker isolated test runner into structured LiveTestCase objects.
+ */
+export function parsePytestCases(rawOutput: string): LiveTestCase[] {
+  if (!rawOutput) return [];
+
+  const cases: LiveTestCase[] = [];
+  const lines = rawOutput.split(/\r?\n/);
+
+  for (const line of lines) {
+    // Matches e.g. ../trusted_tests/test_ci001_trusted.py::test_user_registration_success PASSED
+    const match = line.match(/(?:.*[/\\])?([^:\s]+\.py)::(\w+)\s+(PASSED|FAILED)/i);
+    if (match) {
+      const fileName = match[1];
+      const fnName = match[2];
+      const isPassed = match[3].toUpperCase() === "PASSED";
+
+      const formattedName = fnName
+        .replace(/^test_/, "")
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+
+      cases.push({
+        id: `tc-${fnName}`,
+        name: formattedName,
+        file: fileName,
+        status: isPassed ? "passed" : "failed",
+        failureMessage: isPassed ? undefined : "Assertion failed during test execution",
+      });
+    }
+  }
+
+  return cases;
+}
+
+

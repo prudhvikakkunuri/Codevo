@@ -165,22 +165,10 @@ class AgentToolDispatcher:
                 path = args.get("path")
                 if not path:
                     return {"error": "Missing required argument 'path'"}
-                if session_id not in self._session_reads:
-                    self._session_reads[session_id] = set()
-
-                if path in self._session_reads[session_id]:
-                    return {
-                        "path": path,
-                        "status": "already_inspected",
-                        "instruction": f"File '{path}' is already loaded in your memory. Please proceed directly to calling patch_file or run_tests.",
-                    }
-
-                self._session_reads[session_id].add(path)
                 content = self.workspace_manager.read_file(session_id, path)
                 return {
                     "path": path,
                     "content": content,
-                    "instruction": "File content loaded. Now proceed directly to calling patch_file to apply the fix.",
                 }
 
             elif tool_name == "search_code":
@@ -191,6 +179,8 @@ class AgentToolDispatcher:
                 return {"query": query, "matches": matches, "match_count": len(matches)}
 
             elif tool_name == "patch_file":
+                if self.workspace_manager.is_session_submitted(session_id):
+                    return {"error": f"Session '{session_id}' has already been submitted and is locked in read-only mode. Workspace modifications are prohibited."}
                 path = args.get("path")
                 target = args.get("target")
                 replacement = args.get("replacement")
@@ -206,6 +196,8 @@ class AgentToolDispatcher:
                 }
 
             elif tool_name == "edit_file":
+                if self.workspace_manager.is_session_submitted(session_id):
+                    return {"error": f"Session '{session_id}' has already been submitted and is locked in read-only mode. Workspace modifications are prohibited."}
                 path = args.get("path")
                 new_content = args.get("new_content")
                 if not path or new_content is None:

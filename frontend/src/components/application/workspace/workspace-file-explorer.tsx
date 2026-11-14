@@ -23,6 +23,7 @@ interface WorkspaceFileExplorerProps {
   tree: WorkspaceFolder;
   activeFilePath: string;
   onSelectFile: (file: WorkspaceFile) => void;
+  modifiedFilePaths?: Set<string>;
   className?: string;
 }
 
@@ -43,10 +44,17 @@ interface TreeNodeProps {
   node: WorkspaceNode;
   activeFilePath: string;
   onSelectFile: (file: WorkspaceFile) => void;
+  modifiedFilePaths?: Set<string>;
   depth?: number;
 }
 
-function TreeNode({ node, activeFilePath, onSelectFile, depth = 0 }: TreeNodeProps) {
+function TreeNode({
+  node,
+  activeFilePath,
+  onSelectFile,
+  modifiedFilePaths,
+  depth = 0,
+}: TreeNodeProps) {
   const [isOpen, setIsOpen] = useState(true);
 
   if (isFolder(node)) {
@@ -78,6 +86,7 @@ function TreeNode({ node, activeFilePath, onSelectFile, depth = 0 }: TreeNodePro
                 node={child}
                 activeFilePath={activeFilePath}
                 onSelectFile={onSelectFile}
+                modifiedFilePaths={modifiedFilePaths}
                 depth={depth + 1}
               />
             ))}
@@ -88,20 +97,34 @@ function TreeNode({ node, activeFilePath, onSelectFile, depth = 0 }: TreeNodePro
   }
 
   const isActive = activeFilePath === node.path;
+  const isModified = modifiedFilePaths ? modifiedFilePaths.has(node.path) : false;
 
   return (
     <button
       onClick={() => onSelectFile(node)}
       className={cn(
-        "w-full flex items-center gap-1.5 px-2 py-1 text-xs font-mono text-left transition-colors select-none",
+        "w-full flex items-center gap-1.5 px-2 py-1 text-xs font-mono text-left transition-colors select-none group",
         isActive
-          ? "bg-white/[0.08] text-foreground font-semibold"
-          : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]"
+          ? "bg-white/[0.08] font-semibold"
+          : "hover:bg-white/[0.04]",
+        isModified
+          ? isActive
+            ? "text-emerald-300"
+            : "text-emerald-400 hover:text-emerald-300"
+          : isActive
+          ? "text-foreground"
+          : "text-zinc-400 hover:text-zinc-200"
       )}
       style={{ paddingLeft: `${depth * 12 + 20}px` }}
     >
       {getFileIcon(node.name)}
-      <span className="truncate">{node.name}</span>
+      <span className="truncate flex-1">{node.name}</span>
+      {isModified && (
+        <span
+          className="size-1.5 rounded-full bg-emerald-400 shrink-0 ml-1.5 shadow-[0_0_6px_rgba(52,211,153,0.6)]"
+          title="Modified file"
+        />
+      )}
     </button>
   );
 }
@@ -110,6 +133,7 @@ export function WorkspaceFileExplorer({
   tree,
   activeFilePath,
   onSelectFile,
+  modifiedFilePaths,
   className,
 }: WorkspaceFileExplorerProps) {
   return (
@@ -130,11 +154,12 @@ export function WorkspaceFileExplorer({
       </div>
 
       {/* File Tree List */}
-      <div className="flex-1 overflow-y-auto py-1">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden py-1">
         <TreeNode
           node={tree}
           activeFilePath={activeFilePath}
           onSelectFile={onSelectFile}
+          modifiedFilePaths={modifiedFilePaths}
           depth={0}
         />
       </div>

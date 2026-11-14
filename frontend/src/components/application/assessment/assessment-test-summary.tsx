@@ -9,6 +9,9 @@ interface AssessmentTestSummaryProps {
 }
 
 export function AssessmentTestSummary({ tests }: AssessmentTestSummaryProps) {
+  const isSimulated = tests.isSimulatedOnly;
+  const hasDynamicCases = Array.isArray(tests.testCases) && tests.testCases.length > 0;
+
   return (
     <div className="rounded-xl border border-border/70 bg-[#101014] p-5 space-y-4 font-mono select-none">
       {/* Title & Status */}
@@ -16,10 +19,14 @@ export function AssessmentTestSummary({ tests }: AssessmentTestSummaryProps) {
         <div className="flex items-center gap-2">
           <CheckSquare className="size-4 text-zinc-400" />
           <h3 className="text-sm font-semibold text-foreground">
-            Simulated Public Test Results
+            {isSimulated ? "Simulated Public Test Results" : "Verified Public Test Results"}
           </h3>
-          <span className="px-1.5 py-0.2 rounded border border-border/60 bg-secondary/60 text-[9px] text-zinc-400 uppercase tracking-wider">
-            Simulated
+          <span className={`px-1.5 py-0.2 rounded border text-[9px] uppercase tracking-wider ${
+            isSimulated
+              ? "border-border/60 bg-secondary/60 text-zinc-400"
+              : "border-emerald-800/60 bg-emerald-950/40 text-emerald-300 font-semibold"
+          }`}>
+            {isSimulated ? "Simulated" : `Docker Isolated (${tests.runnerType || "docker"})`}
           </span>
         </div>
 
@@ -54,45 +61,81 @@ export function AssessmentTestSummary({ tests }: AssessmentTestSummaryProps) {
 
       {/* Test Case Breakdown */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
-        <div className="p-2.5 rounded bg-zinc-900/50 border border-border/40 flex items-center justify-between">
-          <div className="flex items-center gap-2 truncate">
-            <CheckCircle2 className="size-3.5 text-emerald-400 shrink-0" />
-            <span className="text-zinc-200 truncate">test_register_new_user</span>
-          </div>
-          <span className="text-[10px] text-emerald-400 font-semibold shrink-0">PASSED</span>
-        </div>
+        {hasDynamicCases ? (
+          tests.testCases!.map((tc) => {
+            const isPassed = tc.status === "passed";
+            return (
+              <div
+                key={tc.id}
+                className={`p-2.5 rounded border flex items-center justify-between ${
+                  isPassed
+                    ? "bg-zinc-900/50 border-border/40"
+                    : "bg-red-950/20 border-red-900/40"
+                }`}
+              >
+                <div className="flex items-center gap-2 truncate">
+                  {isPassed ? (
+                    <CheckCircle2 className="size-3.5 text-emerald-400 shrink-0" />
+                  ) : (
+                    <XCircle className="size-3.5 text-red-400 shrink-0" />
+                  )}
+                  <span className={isPassed ? "text-zinc-200 truncate" : "text-red-200 truncate"}>
+                    {tc.name}
+                  </span>
+                </div>
+                <span
+                  className={`text-[10px] font-semibold shrink-0 ${
+                    isPassed ? "text-emerald-400" : "text-red-400"
+                  }`}
+                >
+                  {isPassed ? "PASSED" : (tc.failureMessage || "FAILED")}
+                </span>
+              </div>
+            );
+          })
+        ) : (
+          <>
+            <div className="p-2.5 rounded bg-zinc-900/50 border border-border/40 flex items-center justify-between">
+              <div className="flex items-center gap-2 truncate">
+                <CheckCircle2 className="size-3.5 text-emerald-400 shrink-0" />
+                <span className="text-zinc-200 truncate">test_register_new_user</span>
+              </div>
+              <span className="text-[10px] text-emerald-400 font-semibold shrink-0">PASSED</span>
+            </div>
 
-        <div className="p-2.5 rounded bg-zinc-900/50 border border-border/40 flex items-center justify-between">
-          <div className="flex items-center gap-2 truncate">
-            <CheckCircle2 className="size-3.5 text-emerald-400 shrink-0" />
-            <span className="text-zinc-200 truncate">test_duplicate_email</span>
-          </div>
-          <span className="text-[10px] text-emerald-400 font-semibold shrink-0">PASSED</span>
-        </div>
+            <div className="p-2.5 rounded bg-zinc-900/50 border border-border/40 flex items-center justify-between">
+              <div className="flex items-center gap-2 truncate">
+                <CheckCircle2 className="size-3.5 text-emerald-400 shrink-0" />
+                <span className="text-zinc-200 truncate">test_duplicate_email</span>
+              </div>
+              <span className="text-[10px] text-emerald-400 font-semibold shrink-0">PASSED</span>
+            </div>
 
-        <div className="p-2.5 rounded bg-red-950/20 border border-red-900/40 flex items-center justify-between">
-          <div className="flex items-center gap-2 truncate">
-            <XCircle className="size-3.5 text-red-400 shrink-0" />
-            <span className="text-red-200 truncate">test_password_hashing</span>
-          </div>
-          <span className="text-[10px] text-red-400 font-semibold shrink-0">FAILED (Salt Verification)</span>
-        </div>
+            <div className="p-2.5 rounded bg-red-950/20 border border-red-900/40 flex items-center justify-between">
+              <div className="flex items-center gap-2 truncate">
+                <XCircle className="size-3.5 text-red-400 shrink-0" />
+                <span className="text-red-200 truncate">test_password_hashing</span>
+              </div>
+              <span className="text-[10px] text-red-400 font-semibold shrink-0">FAILED (Salt Verification)</span>
+            </div>
 
-        <div className="p-2.5 rounded bg-zinc-900/50 border border-border/40 flex items-center justify-between">
-          <div className="flex items-center gap-2 truncate">
-            <CheckCircle2 className="size-3.5 text-emerald-400 shrink-0" />
-            <span className="text-zinc-200 truncate">test_login_valid_credentials</span>
-          </div>
-          <span className="text-[10px] text-emerald-400 font-semibold shrink-0">PASSED</span>
-        </div>
+            <div className="p-2.5 rounded bg-zinc-900/50 border border-border/40 flex items-center justify-between">
+              <div className="flex items-center gap-2 truncate">
+                <CheckCircle2 className="size-3.5 text-emerald-400 shrink-0" />
+                <span className="text-zinc-200 truncate">test_login_valid_credentials</span>
+              </div>
+              <span className="text-[10px] text-emerald-400 font-semibold shrink-0">PASSED</span>
+            </div>
 
-        <div className="p-2.5 rounded bg-red-950/20 border border-red-900/40 flex items-center justify-between sm:col-span-2">
-          <div className="flex items-center gap-2 truncate">
-            <XCircle className="size-3.5 text-red-400 shrink-0" />
-            <span className="text-red-200 truncate">test_login_invalid_credentials</span>
-          </div>
-          <span className="text-[10px] text-red-400 font-semibold shrink-0">FAILED (Expected 401, got 500)</span>
-        </div>
+            <div className="p-2.5 rounded bg-red-950/20 border border-red-900/40 flex items-center justify-between sm:col-span-2">
+              <div className="flex items-center gap-2 truncate">
+                <XCircle className="size-3.5 text-red-400 shrink-0" />
+                <span className="text-red-200 truncate">test_login_invalid_credentials</span>
+              </div>
+              <span className="text-[10px] text-red-400 font-semibold shrink-0">FAILED (Expected 401, got 500)</span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
