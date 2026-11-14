@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180" fill="none">
+  <defs>
+    <linearGradient id="codevoGradientApple" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#A855F7" />
+    </linearGradient>
+  </defs>
+  <!-- Background: Dark navy rounded square -->
+  <rect width="180" height="180" rx="40" fill="#0B1020" />
+  <rect x="1" y="1" width="178" height="178" rx="39" stroke="#1E293B" stroke-width="2" />
+  
+  <!-- Centered coding symbol </> with electric blue to violet gradient -->
+  <path d="M62 59L36.5 90L62 121" stroke="url(#codevoGradientApple)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M101 51L79 129" stroke="url(#codevoGradientApple)" stroke-width="14" stroke-linecap="round" />
+  <path d="M118 59L143.5 90L118 121" stroke="url(#codevoGradientApple)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" />
+</svg>
+
