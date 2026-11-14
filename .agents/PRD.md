@@ -14,6 +14,42 @@ Working tagline: **Build. Debug. Prove.**
 
 The product name is provisional from a brand/legal perspective. Similar or identical names are used by existing businesses. Domain availability is not trademark clearance.
 
+## 1.1 Strategic Development Priority: Prototype First, Complete Product Second
+Codevo adopts a prototype-first engineering strategy. The immediate objective is to build a functional, demonstrable prototype that can be showcased to developers, demonstrated in live walkthroughs, featured in resume and personal portfolio presentations, and published as a meaningful open GitHub project.
+
+The core deliverable demonstrates the platform's primary value proposition:
+> **An AI-powered engineering interview platform where an AI Agent can inspect an existing codebase, modify code, execute tests, analyze failures, and autonomously iterate toward a working solution.**
+
+### 15-Step Prototype Acceptance Workflow
+1. Candidate opens a practical engineering challenge (`CI-001` FastAPI Authentication).
+2. Candidate starts an interview workspace.
+3. Candidate opens the AI Agent.
+4. Candidate provides an engineering task or bug description.
+5. Agent inspects the relevant workspace files.
+6. Agent understands the existing code and identifies the root cause.
+7. Agent creates a concise execution plan.
+8. Agent autonomously edits one or multiple permitted workspace files.
+9. The workspace UI dynamically reflects the actual changes made.
+10. Agent invokes a real isolated code execution environment.
+11. The execution environment runs actual tests (`pytest`) under predefined commands.
+12. Actual stdout, stderr, exit codes, and test results are returned.
+13. Agent analyzes failures and formulates further corrections.
+14. Agent autonomously repeats the execution loop within configured limits.
+15. Agent produces a final summary with changed files, tests passed, failures remaining, and explanations.
+
+**Non-Negotiable Guarantees**: Zero simulated inference; zero fabricated execution output; zero hardcoded success results.
+
+### Initial Prototype Scope vs. Complete Product Roadmap
+- **Initial Prototype Scope**:
+  - Focus: One practical engineering challenge (`CI-001` FastAPI Auth).
+  - Language: Python.
+  - AI Provider: One verified cloud AI provider (e.g. OpenAI GPT-4o or Anthropic Claude Sonnet) selected for high-reliability tool-calling and code editing.
+  - Agent: Autonomous in-scope workspace code editing.
+  - Execution: Real isolated Python test runner with genuine output and iterative failure loop.
+  - Workspace: Live synchronized editor, file diffs, test dock, and activity timeline.
+- **Complete Product Roadmap (Post-Prototype)**:
+  - Following prototype verification (Milestone 1.9.5), resume full product development: remaining 7 AI providers, full 5-challenge library (`CI-002` through `CI-005`), multiple languages, authoritative server timers, hidden test evaluation engine, persistent candidate history/analytics, and hardened microVM production sandbox.
+
 ## 2. Problem
 Real engineering work requires developers to understand unfamiliar repositories, trace behaviour, identify root causes, work across application layers, make safe changes, run tests, interpret results, explain decisions, and use AI responsibly. Codevo provides a structured environment to practice these skills.
 
@@ -74,12 +110,12 @@ Search and filter by difficulty/category/language. Show duration, summary, requi
 ### Interview workspace
 File explorer, Monaco editor/tabs, problem panel, terminal UI (xterm.js), test/output panel, resizable/collapsible AI assistant, timer, save state, and submit controls. Monaco is an editor component, not a full VS Code distribution.
 
-### AI assistant — BYOK
-Candidate supplies their own provider key and selects a supported provider/model. Providers under consideration: Gemini, OpenAI, Groq, Cerebras, and Ollama/local. Verify current provider/model compatibility before promising support.
-- Chat mode: explanations/suggestions; candidate edits manually.
-- Agent mode: inspect/edit workspace and run approved tools within permissions.
-- Never return saved API keys in plaintext to browser after storage or log credentials.
-- Hosted backend cannot automatically access candidate's localhost Ollama; local connectivity needs a deliberate local bridge/agent design.
+### AI assistant — BYOK (Backend-Only Architecture)
+Candidate supplies their own provider key and selects a supported provider/model.
+- **Provider Architecture**: Extensible registry supporting 8 approved providers: OpenAI, Anthropic Claude, DeepSeek, Google Gemini, Groq, Cerebras, Sarvam AI, and OpenRouter. (Initial prototype integrates the first high-performance coding/tool-calling cloud provider; remaining providers follow post-prototype).
+- **Backend-Only Storage**: API keys are encrypted at rest with AES-256-GCM envelope encryption and never touch browser persistent storage or client logs.
+- **Chat mode**: Explanations, architectural suggestions, and debugging advice; candidate edits manually.
+- **Agent mode**: Autonomous in-scope workspace code editing, tool execution (`list_files`, `read_file`, `search_code`, `edit_file`, `run_tests`), iterative test execution, and failure analysis. Candidate approval is not required for normal in-scope code edits within authorized files. Explicit approval or hard blocks are mandatory for destructive operations, out-of-scope edits, package installation, shell commands, network access, or accessing secrets.
 
 ### Evaluation/results
 - Public tests may be visible.
