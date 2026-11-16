@@ -6,6 +6,7 @@ import { type Challenge } from "@/data/challenges";
 import { DEMO_SESSION_ID } from "@/data/workspace";
 import { clearClientSubmission } from "@/data/assessment";
 import { clearWorkspaceState } from "@/lib/workspace-storage";
+import { BACKEND_API_URL } from "@/lib/supabase";
 import {
   X,
   Timer,
@@ -77,7 +78,7 @@ export function ChallengeDetailsDialog({
       clearWorkspaceState(DEMO_SESSION_ID);
 
       // Call authoritative backend workspace initialization endpoint with force_reset=true
-      const res = await fetch(`http://localhost:8000/api/v1/workspace/${DEMO_SESSION_ID}/init?force_reset=true`, {
+      const res = await fetch(`${BACKEND_API_URL}/api/v1/workspace/${DEMO_SESSION_ID}/init?force_reset=true`, {
         method: "POST",
       });
 

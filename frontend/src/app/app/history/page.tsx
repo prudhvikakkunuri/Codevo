@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useSyncExternalStore } from "react
 import Link from "next/link";
 import { DEMO_INTERVIEW_HISTORY, type InterviewHistoryRecord } from "@/data/dashboard";
 import { getStoredSubmission, type SubmissionRecord } from "@/data/assessment";
+import { BACKEND_API_URL } from "@/lib/supabase";
 import {
   FileText,
   Clock,
@@ -22,7 +23,7 @@ export default function HistoryPage() {
     let isMounted = true;
     async function fetchSubmissions() {
       try {
-        const res = await fetch("http://localhost:8000/api/v1/submissions");
+        const res = await fetch(`${BACKEND_API_URL}/api/v1/submissions`);
         if (res.ok) {
           const data = await res.json();
           if (isMounted && Array.isArray(data.submissions) && data.submissions.length > 0) {

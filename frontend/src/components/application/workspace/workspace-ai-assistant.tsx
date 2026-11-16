@@ -18,6 +18,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BACKEND_API_URL } from "@/lib/supabase";
 
 export interface AgentEvent {
   event_type:
@@ -172,8 +173,8 @@ export function WorkspaceAiAssistant({
 
     try {
       const endpoint = isChat
-        ? `http://localhost:8000/api/v1/agent/${sessionId}/chat`
-        : `http://localhost:8000/api/v1/agent/${sessionId}/run`;
+        ? `${BACKEND_API_URL}/api/v1/agent/${sessionId}/chat`
+        : `${BACKEND_API_URL}/api/v1/agent/${sessionId}/run`;
 
       const response = await fetch(endpoint, {
         method: "POST",

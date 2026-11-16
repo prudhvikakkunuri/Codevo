@@ -36,6 +36,7 @@ import {
 import { type TestScenarioId } from "@/data/test-fixtures";
 import { Files, Code2, Terminal as TerminalIcon, CheckSquare, BookOpen, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BACKEND_API_URL } from "@/lib/supabase";
 
 type DocumentState = PersistedDocumentState;
 
@@ -203,7 +204,7 @@ export function WorkspaceLayout({ sessionId }: WorkspaceLayoutProps) {
   // Function to refresh documents from backend disk workspace
   const refreshBackendFiles = React.useCallback(async () => {
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/workspace/${targetSessionId}/files`);
+      const res = await fetch(`${BACKEND_API_URL}/api/v1/workspace/${targetSessionId}/files`);
       if (res.ok) {
         const data = await res.json();
         if (data.documents) {
@@ -230,7 +231,7 @@ export function WorkspaceLayout({ sessionId }: WorkspaceLayoutProps) {
 
   // Initialize workspace on backend mount
   useEffect(() => {
-    fetch(`http://localhost:8000/api/v1/workspace/${targetSessionId}/init`, { method: "POST" })
+    fetch(`${BACKEND_API_URL}/api/v1/workspace/${targetSessionId}/init`, { method: "POST" })
       .then(() => refreshBackendFiles())
       .catch(() => {});
   }, [targetSessionId, refreshBackendFiles]);
@@ -240,7 +241,7 @@ export function WorkspaceLayout({ sessionId }: WorkspaceLayoutProps) {
     try {
       clearClientSubmission(targetSessionId);
       clearWorkspaceState(targetSessionId);
-      await fetch(`http://localhost:8000/api/v1/workspace/${targetSessionId}/reset`, { method: "POST" });
+      await fetch(`${BACKEND_API_URL}/api/v1/workspace/${targetSessionId}/reset`, { method: "POST" });
       await refreshBackendFiles();
     } catch {
       clearClientSubmission(targetSessionId);
@@ -279,7 +280,7 @@ export function WorkspaceLayout({ sessionId }: WorkspaceLayoutProps) {
     });
 
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/runner/${targetSessionId}/run`, {
+      const res = await fetch(`${BACKEND_API_URL}/api/v1/runner/${targetSessionId}/run`, {
         method: "POST",
       });
       if (res.ok) {
@@ -378,7 +379,7 @@ export function WorkspaceLayout({ sessionId }: WorkspaceLayoutProps) {
     // Debounced sync to backend workspace storage with optimistic revision concurrency
     const currentBaseRevision = fileRevisionsRef.current[filePath] ?? 1;
 
-    fetch(`http://localhost:8000/api/v1/workspace/${targetSessionId}/files`, {
+    fetch(`${BACKEND_API_URL}/api/v1/workspace/${targetSessionId}/files`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

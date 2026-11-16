@@ -18,6 +18,7 @@ import {
   Info,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BACKEND_API_URL } from "@/lib/supabase";
 
 interface WorkspaceSubmissionDialogProps {
   isOpen: boolean;
@@ -111,7 +112,7 @@ export function WorkspaceSubmissionDialog({
     timeoutsRef.current.push(step1, step2);
 
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/workspace/${sessionId}/submit`, {
+      const res = await fetch(`${BACKEND_API_URL}/api/v1/workspace/${sessionId}/submit`, {
         method: "POST",
       });
 

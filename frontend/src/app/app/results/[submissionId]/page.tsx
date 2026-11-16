@@ -8,6 +8,7 @@ import { AssessmentTestSummary } from "@/components/application/assessment/asses
 import { AssessmentRubricCard } from "@/components/application/assessment/assessment-rubric-card";
 import { AssessmentFeedbackPanel } from "@/components/application/assessment/assessment-feedback-panel";
 import { History } from "lucide-react";
+import { BACKEND_API_URL } from "@/lib/supabase";
 
 interface ResultsPageProps {
   params: Promise<{
@@ -22,7 +23,7 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
   let isVerifiedBackendReport = false;
 
   try {
-    const res = await fetch(`http://127.0.0.1:8000/api/v1/submissions/${submissionId}`, {
+    const res = await fetch(`${BACKEND_API_URL}/api/v1/submissions/${submissionId}`, {
       cache: "no-store",
     });
     if (res.ok) {

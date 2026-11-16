@@ -11,8 +11,21 @@ export const SUPABASE_ANON_KEY =
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
   "";
 
-export const BACKEND_API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+/**
+ * Resolves the authoritative backend API base URL.
+ * In production, uses NEXT_PUBLIC_API_URL (e.g. Render backend URL).
+ * In local development, falls back to http://localhost:8000.
+ * Strips any trailing slashes to guarantee clean path composition.
+ */
+export function getBackendUrl(path: string = ""): string {
+  const base = (
+    process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+  ).replace(/\/+$/, "");
+  if (!path) return base;
+  return `${base}${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
+export const BACKEND_API_URL = getBackendUrl();
 
 /**
  * Returns true if real Supabase credentials have been configured in the environment.
@@ -75,7 +88,7 @@ export async function fetchWithAuth<T = unknown>(
 
   const url = endpoint.startsWith("http")
     ? endpoint
-    : `${BACKEND_API_URL}${endpoint.startsWith("/") ? "" : "/"}${endpoint}`;
+    : getBackendUrl(endpoint);
 
   const headers = new Headers(options.headers || {});
   headers.set("Authorization", `Bearer ${token}`);
