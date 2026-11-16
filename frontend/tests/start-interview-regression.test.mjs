@@ -19,13 +19,18 @@ test("Start Interview Component & Workflow Regression Tests", async (t) => {
     assert.ok(dialogSource.includes('disabled={isStarting}'), "Button must only disable during active request");
   });
 
-  await t.test("Target destination is verified as DEMO_SESSION_ID (/app/workspace/ci-001-demo)", () => {
-    assert.ok(dialogSource.includes("router.push(`/app/workspace/${DEMO_SESSION_ID}`)"), "Must navigate to DEMO_SESSION_ID workspace");
+  await t.test("Target destination is verified as DEMO_SESSION_ID or target session", () => {
+    assert.ok(
+      dialogSource.includes("router.push(`/app/workspace/${targetSessionId}`)") ||
+      dialogSource.includes("router.push(`/app/workspace/${DEMO_SESSION_ID}`)"),
+      "Must navigate to target workspace"
+    );
     assert.ok(dialogSource.includes("DEMO_SESSION_ID"), "Must import and reference DEMO_SESSION_ID");
   });
 
   await t.test("Workspace initialization API is invoked on click", () => {
     assert.ok(
+      dialogSource.includes("${BACKEND_API_URL}/api/v1/workspace/${targetSessionId}/init") ||
       dialogSource.includes("${BACKEND_API_URL}/api/v1/workspace/${DEMO_SESSION_ID}/init"),
       "Must call workspace initialization endpoint via BACKEND_API_URL"
     );

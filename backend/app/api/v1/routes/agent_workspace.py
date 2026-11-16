@@ -10,6 +10,8 @@ from app.core.agent.orchestrator import AgentOrchestrator, TimelineEvent
 from app.core.agent.tools import AgentToolDispatcher
 from app.core.agent.workspace_manager import RevisionConflictError, SessionWorkspaceManager
 from app.core.ai.groq_adapter import GroqProvider
+from app.core.auth.dependencies import get_current_user
+from app.core.auth.models import AuthenticatedUser
 from app.core.config import Settings, get_settings
 from app.core.evaluator.submission_manager import SubmissionError, SubmissionManager
 from app.core.runner.isolated_runner import IsolatedTestRunner, TestRunResult
@@ -68,18 +70,34 @@ async def init_workspace(session_id: str, force_reset: bool = False) -> dict[str
 
 
 @router.post("/workspace/{session_id}/submit")
-async def submit_workspace(session_id: str) -> dict[str, Any]:
+async def submit_workspace(
+    session_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> dict[str, Any]:
     """Authoritatively finalize and lock a session into read-only submitted state."""
     clean_id = "".join(c for c in session_id if c.isalnum() or c in ("-", "_")).strip()
+    user_id_str = str(current_user.id)
     session_dir = workspace_manager.get_session_dir(clean_id)
     current_revisions = workspace_manager.get_all_revisions(clean_id)
 
+    # Session ownership validation: if session is user-scoped (ci-001-<user_id>), verify match
+    if clean_id.startswith("ci-001-") and clean_id != "ci-001-demo":
+        session_owner = clean_id.replace("ci-001-", "").strip()
+        if session_owner != user_id_str and session_owner.replace("-", "") != user_id_str.replace("-", ""):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden: You do not own this workspace session.",
+            )
+
     # If already submitted and an assessment report exists, return existing report
     if workspace_manager.is_session_submitted(clean_id):
-        subs = [s for s in submission_manager.list_submissions() if s.sessionId == clean_id]
+        subs = [
+            s for s in submission_manager.list_submissions(user_id=user_id_str)
+            if s.sessionId == clean_id
+        ]
         if subs:
             existing_report = submission_manager.get_submission_report(subs[0].submissionId)
-            if existing_report:
+            if existing_report and existing_report.userId == user_id_str:
                 return {
                     "session_id": clean_id,
                     "status": "submitted",
@@ -88,7 +106,9 @@ async def submit_workspace(session_id: str) -> dict[str, Any]:
                 }
 
     try:
-        report = submission_manager.create_submission(clean_id, session_dir, current_revisions)
+        report = submission_manager.create_submission(
+            clean_id, session_dir, current_revisions, user_id=user_id_str
+        )
         workspace_manager.submit_session(clean_id)
         return {
             "session_id": clean_id,
@@ -295,21 +315,43 @@ async def stream_agent_endpoint(
 
 
 @router.get("/submissions/{submission_id}")
-async def get_submission_endpoint(submission_id: str) -> dict[str, Any]:
-    """Retrieve authoritative assessment report for a submission."""
+async def get_submission_endpoint(
+    submission_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Retrieve authoritative assessment report for a submission owned by the candidate."""
     report = submission_manager.get_submission_report(submission_id)
     if not report:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Submission '{submission_id}' not found.",
         )
+
+    user_id_str = str(current_user.id)
+    # Strictly enforce ownership: User B cannot retrieve User A's submission
+    if report.userId and report.userId != user_id_str:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: You do not have permission to view this submission.",
+        )
+
+    # If legacy/dev submission without an owner, reject normal user access
+    if not report.userId:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Submission '{submission_id}' not found.",
+        )
+
     return report.model_dump()
 
 
 @router.get("/submissions")
-async def list_submissions_endpoint() -> dict[str, Any]:
-    """List all historical submissions."""
-    records = submission_manager.list_submissions()
+async def list_submissions_endpoint(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    """List all historical submissions owned exclusively by the authenticated user."""
+    user_id_str = str(current_user.id)
+    records = submission_manager.list_submissions(user_id=user_id_str)
     return {"submissions": [r.model_dump() for r in records]}
 
 

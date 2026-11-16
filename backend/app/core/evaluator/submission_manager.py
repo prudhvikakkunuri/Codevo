@@ -48,6 +48,7 @@ class SubmissionManager:
         session_id: str,
         result: TestRunResult,
         workspace_revisions: dict[str, int],
+        candidate_id: str | None = None,
     ) -> TestRunRecord:
         """Create and persist a TestRunRecord from an execution result."""
         clean_id = "".join(c for c in session_id if c.isalnum() or c in ("-", "_")).strip()
@@ -81,6 +82,7 @@ class SubmissionManager:
         record = TestRunRecord(
             id=run_id,
             sessionId=clean_id,
+            candidateId=candidate_id,
             timestamp=now_iso,
             runnerType=result.runner_type,
             exitCode=result.exit_code,
@@ -131,6 +133,7 @@ class SubmissionManager:
         session_id: str,
         session_dir: Path,
         current_revisions: dict[str, int],
+        user_id: str | None = None,
     ) -> AssessmentReport:
         """Validate eligibility, snapshot candidate workspace, and generate authoritative assessment."""
         clean_id = "".join(c for c in session_id if c.isalnum() or c in ("-", "_")).strip()
@@ -141,6 +144,7 @@ class SubmissionManager:
             test_run = TestRunRecord(
                 id=f"tr-untested-{uuid.uuid4().hex[:6]}",
                 sessionId=clean_id,
+                candidateId=user_id,
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 runnerType="untested",
                 exitCode=-1,
@@ -196,6 +200,7 @@ class SubmissionManager:
         manifest = {
             "submissionId": submission_id,
             "sessionId": clean_id,
+            "userId": user_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "testRunId": test_run.id,
             "files": manifest_files,
@@ -208,6 +213,7 @@ class SubmissionManager:
             session_id=clean_id,
             test_run=test_run,
             workspace_files=workspace_files,
+            user_id=user_id,
         )
 
         # 5. Persist assessment report
@@ -215,15 +221,21 @@ class SubmissionManager:
         report_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
 
         # 6. Update submissions index
-        self._append_to_index(report, test_run)
+        self._append_to_index(report, test_run, user_id=user_id)
 
         return report
 
-    def _append_to_index(self, report: AssessmentReport, test_run: TestRunRecord) -> None:
+    def _append_to_index(
+        self,
+        report: AssessmentReport,
+        test_run: TestRunRecord,
+        user_id: str | None = None,
+    ) -> None:
         """Record submission summary in the index."""
         record = SubmissionRecord(
             submissionId=report.submissionId,
             sessionId=report.sessionId,
+            userId=user_id or report.userId,
             challengeId=report.challengeId,
             challengeTitle=report.challengeTitle,
             submittedAt=report.submittedAt,
@@ -274,14 +286,28 @@ class SubmissionManager:
             logger.error("Failed to parse assessment report %s: %s", clean_sub_id, exc)
             return None
 
-    def list_submissions(self) -> list[SubmissionRecord]:
-        """List all historical submissions."""
+    def list_submissions(
+        self,
+        user_id: str | None = None,
+        include_dev: bool = False,
+    ) -> list[SubmissionRecord]:
+        """List historical submissions.
+
+        If user_id is provided, returns ONLY submissions owned by that user.
+        Legacy/dev submissions without a user_id are strictly excluded.
+        If user_id is None and include_dev is False, returns [] (deny-by-default).
+        """
         if not self.index_file.exists():
             return []
 
         try:
             data = json.loads(self.index_file.read_text(encoding="utf-8"))
-            return [SubmissionRecord(**item) for item in data]
+            records = [SubmissionRecord(**item) for item in data]
+            if user_id is not None:
+                return [r for r in records if r.userId == user_id]
+            if include_dev:
+                return records
+            return []
         except Exception as exc:
             logger.error("Failed to load submissions index: %s", exc)
             return []

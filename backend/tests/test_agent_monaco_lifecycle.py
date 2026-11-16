@@ -102,56 +102,70 @@ async def test_failed_patch_returns_meaningful_error(
     assert "Target string not found" in res["error"]
 
 
+import uuid
+from app.core.auth.dependencies import get_current_user
+from app.core.auth.models import AuthenticatedUser
+
+
 def test_session_api_lifecycle_and_submission_guard():
     """Verify HTTP API lifecycle: init -> submit -> 403 on edit/agent -> reset -> 200 on edit."""
+    test_user = AuthenticatedUser(
+        id=uuid.UUID("44444444-4444-4444-4444-444444444444"),
+        role="authenticated",
+        email="test@example.com",
+    )
+    app.dependency_overrides[get_current_user] = lambda: test_user
     client = TestClient(app)
     session_id = "test-lifecycle-http"
 
-    # 1. Initialize
-    init_res = client.post(f"/api/v1/workspace/{session_id}/init?force_reset=true")
-    assert init_res.status_code == 200
-    assert init_res.json()["is_submitted"] is False
-    assert init_res.json()["status"] == "active"
+    try:
+        # 1. Initialize
+        init_res = client.post(f"/api/v1/workspace/{session_id}/init?force_reset=true")
+        assert init_res.status_code == 200
+        assert init_res.json()["is_submitted"] is False
+        assert init_res.json()["status"] == "active"
 
-    # 2. Edit works when active
-    edit_res = client.put(
-        f"/api/v1/workspace/{session_id}/files",
-        json={"path": "app/utils/security.py", "content": "# Updated content", "base_revision": 1},
-    )
-    assert edit_res.status_code == 200
-    assert edit_res.json()["revision"] == 2
+        # 2. Edit works when active
+        edit_res = client.put(
+            f"/api/v1/workspace/{session_id}/files",
+            json={"path": "app/utils/security.py", "content": "# Updated content", "base_revision": 1},
+        )
+        assert edit_res.status_code == 200
+        assert edit_res.json()["revision"] == 2
 
-    # 3. Submit session
-    sub_res = client.post(f"/api/v1/workspace/{session_id}/submit")
-    assert sub_res.status_code == 200
-    assert sub_res.json()["status"] == "submitted"
+        # 3. Submit session
+        sub_res = client.post(f"/api/v1/workspace/{session_id}/submit")
+        assert sub_res.status_code == 200
+        assert sub_res.json()["status"] == "submitted"
 
-    # 4. Edit rejected with 403 on submitted session
-    edit_locked = client.put(
-        f"/api/v1/workspace/{session_id}/files",
-        json={"path": "app/utils/security.py", "content": "# Hacked content", "base_revision": 2},
-    )
-    assert edit_locked.status_code == 403
-    err_text = str(edit_locked.json())
-    assert "submitted" in err_text.lower()
+        # 4. Edit rejected with 403 on submitted session
+        edit_locked = client.put(
+            f"/api/v1/workspace/{session_id}/files",
+            json={"path": "app/utils/security.py", "content": "# Hacked content", "base_revision": 2},
+        )
+        assert edit_locked.status_code == 403
+        err_text = str(edit_locked.json())
+        assert "submitted" in err_text.lower()
 
-    # 5. Agent run rejected with 403 on submitted session
-    agent_locked = client.post(
-        f"/api/v1/agent/{session_id}/run",
-        json={"prompt": "Fix all bugs"},
-    )
-    assert agent_locked.status_code == 403
-    assert "submitted" in str(agent_locked.json()).lower()
+        # 5. Agent run rejected with 403 on submitted session
+        agent_locked = client.post(
+            f"/api/v1/agent/{session_id}/run",
+            json={"prompt": "Fix all bugs"},
+        )
+        assert agent_locked.status_code == 403
+        assert "submitted" in str(agent_locked.json()).lower()
 
-    # 6. Reset session restores active status
-    reset_res = client.post(f"/api/v1/workspace/{session_id}/reset")
-    assert reset_res.status_code == 200
-    assert reset_res.json()["status"] == "active"
-    assert reset_res.json()["is_submitted"] is False
+        # 6. Reset session restores active status
+        reset_res = client.post(f"/api/v1/workspace/{session_id}/reset")
+        assert reset_res.status_code == 200
+        assert reset_res.json()["status"] == "active"
+        assert reset_res.json()["is_submitted"] is False
 
-    # 7. Edit succeeds again after reset
-    edit_after_reset = client.put(
-        f"/api/v1/workspace/{session_id}/files",
-        json={"path": "app/utils/security.py", "content": "# Working again", "base_revision": 1},
-    )
-    assert edit_after_reset.status_code == 200
+        # 7. Edit succeeds again after reset
+        edit_after_reset = client.put(
+            f"/api/v1/workspace/{session_id}/files",
+            json={"path": "app/utils/security.py", "content": "# Working again", "base_revision": 1},
+        )
+        assert edit_after_reset.status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)

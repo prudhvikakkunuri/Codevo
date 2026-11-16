@@ -14,9 +14,8 @@ interface WorkspacePageProps {
 export default async function WorkspacePage({ params }: WorkspacePageProps) {
   const { sessionId } = await params;
 
-  // Refinement 1: Only support the explicit demo session ID "ci-001-demo" initially.
-  // Do not silently load CI-001 for arbitrary session IDs.
-  if (sessionId !== DEMO_SESSION_ID) {
+  // Support the explicit demo session ID "ci-001-demo" and user-scoped sessions "ci-001-<userId>".
+  if (sessionId !== DEMO_SESSION_ID && !sessionId.startsWith("ci-001-")) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-[#09090B] text-foreground p-6 text-center select-none">
         <div className="size-12 rounded-lg border border-border/70 bg-secondary/80 flex items-center justify-center text-zinc-400 mb-4 shadow-sm">

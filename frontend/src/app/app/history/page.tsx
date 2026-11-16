@@ -1,10 +1,12 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useSyncExternalStore } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { DEMO_INTERVIEW_HISTORY, type InterviewHistoryRecord } from "@/data/dashboard";
-import { getStoredSubmission, type SubmissionRecord } from "@/data/assessment";
+import { type InterviewHistoryRecord } from "@/data/dashboard";
+import { type SubmissionRecord } from "@/data/assessment";
 import { BACKEND_API_URL } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth-context";
+import { EmptyState } from "@/components/application/empty-state";
 import {
   FileText,
   Clock,
@@ -12,68 +14,81 @@ import {
   CheckCircle2,
   Calendar,
   CheckSquare,
+  History as HistoryIcon,
+  Loader2,
 } from "lucide-react";
 
-const emptySubscribe = () => () => {};
-
 export default function HistoryPage() {
+  const { session, isLoading: authLoading } = useAuth();
   const [backendSubmissions, setBackendSubmissions] = useState<SubmissionRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
     async function fetchSubmissions() {
+      if (!session?.access_token) {
+        if (isMounted) {
+          setBackendSubmissions([]);
+          setIsLoading(false);
+        }
+        return;
+      }
+
       try {
-        const res = await fetch(`${BACKEND_API_URL}/api/v1/submissions`);
+        const res = await fetch(`${BACKEND_API_URL}/api/v1/submissions`, {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
         if (res.ok) {
           const data = await res.json();
-          if (isMounted && Array.isArray(data.submissions) && data.submissions.length > 0) {
+          if (isMounted && Array.isArray(data.submissions)) {
             setBackendSubmissions(data.submissions);
           }
         }
       } catch {
         // Backend offline or unreachable
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     }
-    fetchSubmissions();
+
+    if (!authLoading) {
+      fetchSubmissions();
+    }
+
     return () => {
       isMounted = false;
     };
-  }, []);
-
-  const storedTimestamp = useSyncExternalStore(
-    emptySubscribe,
-    () => getStoredSubmission("ci-001-demo")?.submittedAt ?? null,
-    () => null
-  );
+  }, [session?.access_token, authLoading]);
 
   const historyItems: InterviewHistoryRecord[] = useMemo(() => {
-    if (backendSubmissions.length > 0) {
-      return backendSubmissions.map((sub) => ({
-        id: sub.submissionId,
-        submissionId: sub.submissionId,
-        challengeId: sub.challengeId || "CI-001",
-        challengeTitle: sub.challengeTitle || "Debug a Broken FastAPI Authentication API",
-        category: "Backend Security",
-        difficulty: "Medium",
-        completedAt: sub.submittedAt,
-        scorePercentage: Math.round(sub.scorePercentage),
-        assertionsPassed: sub.passedTests ?? 6,
-        assertionsTotal: sub.totalTests ?? 6,
-        durationMinutes: 25,
-        status: sub.scorePercentage >= 70 ? ("passed" as const) : ("failed" as const),
-      }));
-    }
+    return backendSubmissions.map((sub) => ({
+      id: sub.submissionId,
+      submissionId: sub.submissionId,
+      challengeId: sub.challengeId || "CI-001",
+      challengeTitle: sub.challengeTitle || "Debug a Broken FastAPI Authentication API",
+      category: "Backend Security",
+      difficulty: "Medium",
+      completedAt: sub.submittedAt,
+      scorePercentage: Math.round(sub.scorePercentage),
+      assertionsPassed: sub.passedTests ?? 6,
+      assertionsTotal: sub.totalTests ?? 6,
+      durationMinutes: 25,
+      status: sub.scorePercentage >= 70 ? ("passed" as const) : ("failed" as const),
+    }));
+  }, [backendSubmissions]);
 
-    if (storedTimestamp) {
-      return [
-        {
-          ...DEMO_INTERVIEW_HISTORY[0],
-          completedAt: storedTimestamp,
-        },
-      ];
-    }
-    return DEMO_INTERVIEW_HISTORY;
-  }, [backendSubmissions, storedTimestamp]);
+  if (isLoading || authLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[40vh] text-center space-y-3 font-mono">
+        <Loader2 className="size-6 text-zinc-400 animate-spin" />
+        <p className="text-xs text-zinc-400">Loading interview history...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 pb-16 font-mono select-none">
@@ -94,86 +109,96 @@ export default function HistoryPage() {
         </div>
       </div>
 
-      {/* History Records List */}
-      <div className="space-y-3">
-        {historyItems.map((record) => {
-          const formattedDate = new Date(record.completedAt).toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          });
+      {/* History Records List or Empty State */}
+      {historyItems.length > 0 ? (
+        <div className="space-y-3">
+          {historyItems.map((record) => {
+            const formattedDate = new Date(record.completedAt).toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            });
 
-          return (
-            <div
-              key={record.id}
-              className="p-5 rounded-xl border border-border/70 bg-[#101014] hover:border-zinc-700 transition-all space-y-4"
-            >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                {/* Challenge Info */}
-                <div className="space-y-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="px-1.5 py-0.2 rounded border border-border/80 bg-secondary/80 text-[10px] font-semibold text-zinc-300">
-                      {record.challengeId}
-                    </span>
-                    <span className="text-xs text-zinc-500">· {record.category}</span>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded border border-border/60 bg-zinc-900 text-zinc-400">
-                      {record.difficulty}
-                    </span>
-                  </div>
-                  <h3 className="text-sm font-semibold text-foreground truncate">
-                    {record.challengeTitle}
-                  </h3>
-                </div>
-
-                {/* Score & Evaluation Pill */}
-                <div className="flex items-center gap-3 shrink-0">
-                  <div className="text-right space-y-0.5">
-                    <div className="text-lg font-bold text-foreground">
-                      {record.scorePercentage}%
+            return (
+              <div
+                key={record.id}
+                className="p-5 rounded-xl border border-border/70 bg-[#101014] hover:border-zinc-700 transition-all space-y-4"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  {/* Challenge Info */}
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="px-1.5 py-0.2 rounded border border-border/80 bg-secondary/80 text-[10px] font-semibold text-zinc-300">
+                        {record.challengeId}
+                      </span>
+                      <span className="text-xs text-zinc-500">· {record.category}</span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded border border-border/60 bg-zinc-900 text-zinc-400">
+                        {record.difficulty}
+                      </span>
                     </div>
-                    <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-semibold">
-                      <CheckCircle2 className="size-2.5" />
-                      <span>Evaluated</span>
+                    <h3 className="text-sm font-semibold text-foreground truncate">
+                      {record.challengeTitle}
+                    </h3>
+                  </div>
+
+                  {/* Score & Evaluation Pill */}
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="text-right space-y-0.5">
+                      <div className="text-lg font-bold text-foreground">
+                        {record.scorePercentage}%
+                      </div>
+                      <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-semibold">
+                        <CheckCircle2 className="size-2.5" />
+                        <span>Evaluated</span>
+                      </span>
+                    </div>
+
+                    <Link
+                      href={`/app/results/${record.submissionId}`}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-foreground text-background hover:bg-zinc-200 text-xs font-medium transition-colors cursor-pointer"
+                    >
+                      <span>View Report</span>
+                      <ArrowRight className="size-3" />
+                    </Link>
+                  </div>
+                </div>
+
+                {/* Sub-strip Details */}
+                <div className="pt-3 border-t border-border/40 flex flex-wrap items-center justify-between gap-3 text-[11px] text-zinc-400">
+                  <div className="flex items-center gap-4">
+                    <span className="flex items-center gap-1 text-zinc-500">
+                      <Calendar className="size-3" />
+                      <span>{formattedDate}</span>
+                    </span>
+                    <span className="flex items-center gap-1 text-zinc-500">
+                      <Clock className="size-3" />
+                      <span>{record.durationMinutes} min</span>
+                    </span>
+                    <span className="flex items-center gap-1 text-zinc-500">
+                      <CheckSquare className="size-3 text-zinc-400" />
+                      <span>
+                        {record.assertionsPassed}/{record.assertionsTotal} Public Assertions
+                      </span>
                     </span>
                   </div>
 
-                  <Link
-                    href={`/app/results/${record.submissionId}`}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-foreground text-background hover:bg-zinc-200 text-xs font-medium transition-colors cursor-pointer"
-                  >
-                    <span>View Report</span>
-                    <ArrowRight className="size-3" />
-                  </Link>
-                </div>
-              </div>
-
-              {/* Sub-strip Details */}
-              <div className="pt-3 border-t border-border/40 flex flex-wrap items-center justify-between gap-3 text-[11px] text-zinc-400">
-                <div className="flex items-center gap-4">
-                  <span className="flex items-center gap-1 text-zinc-500">
-                    <Calendar className="size-3" />
-                    <span>{formattedDate}</span>
-                  </span>
-                  <span className="flex items-center gap-1 text-zinc-500">
-                    <Clock className="size-3" />
-                    <span>{record.durationMinutes} min</span>
-                  </span>
-                  <span className="flex items-center gap-1 text-zinc-500">
-                    <CheckSquare className="size-3 text-zinc-400" />
-                    <span>
-                      {record.assertionsPassed}/{record.assertionsTotal} Public Assertions
-                    </span>
+                  <span className="text-[10px] text-zinc-600">
+                    Submission ID: {record.submissionId}
                   </span>
                 </div>
-
-                <span className="text-[10px] text-zinc-600">
-                  Submission ID: {record.submissionId}
-                </span>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      ) : (
+        <EmptyState
+          icon={HistoryIcon}
+          title="No interview history yet"
+          description="Once you complete a challenge or submit a solution, your final code snapshot, test verification results, and rubric feedback will appear here."
+          actionLabel="Explore Challenges"
+          actionHref="/app/challenges"
+        />
+      )}
 
       {/* Privacy Note */}
       <div className="rounded-lg border border-border/60 bg-card/25 p-4 space-y-2 text-xs">

@@ -64,6 +64,7 @@ class EvaluatorEngine:
         test_run: TestRunRecord,
         workspace_files: dict[str, str],
         completed_duration_minutes: int = 25,
+        user_id: str | None = None,
     ) -> AssessmentReport:
         """Evaluate CI-001 challenge submission against authoritative rubric."""
 
@@ -390,6 +391,7 @@ class EvaluatorEngine:
         return AssessmentReport(
             submissionId=submission_id,
             sessionId=session_id,
+            userId=user_id,
             challengeId="CI-001",
             challengeTitle="Debug a Broken FastAPI Authentication API",
             submittedAt=test_run.timestamp,

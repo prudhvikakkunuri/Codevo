@@ -11,6 +11,9 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from unittest.mock import AsyncMock
+from app.core.auth.exceptions import JWKSKeyNotFoundError
+from app.core.auth.jwks import JWKSProvider
 from app.core.config import Settings, get_settings
 from app.main import create_app
 
@@ -62,6 +65,29 @@ def valid_jwks_dict(ec_keypair: dict[str, Any], rsa_keypair: dict[str, Any]) -> 
             rsa_keypair["jwk"],
         ]
     }
+
+
+@pytest.fixture
+def mock_jwks_provider(ec_keypair, rsa_keypair) -> JWKSProvider:
+    """Mock JWKSProvider returning pre-generated offline keys without network requests."""
+    provider = AsyncMock(spec=JWKSProvider)
+    keys_map = {
+        ec_keypair["kid"]: ec_keypair["public_key"],
+        rsa_keypair["kid"]: rsa_keypair["public_key"],
+    }
+    alg_map = {
+        ec_keypair["kid"]: "ES256",
+        rsa_keypair["kid"]: "RS256",
+    }
+
+    async def _get_key(kid: str):
+        if kid in keys_map:
+            return keys_map[kid]
+        raise JWKSKeyNotFoundError(f"Key '{kid}' not found in mock JWKS")
+
+    provider.get_key_for_kid.side_effect = _get_key
+    provider.get_algorithm_for_kid.side_effect = lambda kid: alg_map.get(kid)
+    return provider
 
 
 @pytest.fixture
@@ -130,10 +156,12 @@ def test_settings() -> Settings:
 
 
 @pytest.fixture
-def app(test_settings: Settings) -> FastAPI:
+def app(test_settings: Settings, mock_jwks_provider: JWKSProvider) -> FastAPI:
     """Create a FastAPI application instance configured for testing."""
+    from app.core.auth.dependencies import get_jwks_provider
     application = create_app(settings=test_settings)
     application.dependency_overrides[get_settings] = lambda: test_settings
+    application.dependency_overrides[get_jwks_provider] = lambda: mock_jwks_provider
     return application
 
 

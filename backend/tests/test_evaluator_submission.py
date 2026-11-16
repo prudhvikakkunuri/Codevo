@@ -102,7 +102,7 @@ def test_submission_manager_and_evaluator_engine(tmp_path: Path):
     assert len(test_record.testCases) == 6
 
     # 2. Submit solution
-    report = sub_mgr.create_submission(session_id, ws_dir, current_revs)
+    report = sub_mgr.create_submission(session_id, ws_dir, current_revs, user_id="test-candidate-123")
 
     assert report.isDemoAssessment is False
     assert report.challengeId == "CI-001"
@@ -129,7 +129,7 @@ def test_submission_manager_and_evaluator_engine(tmp_path: Path):
     assert loaded.overallScore == 100.0
 
     # 4. Check index
-    submissions = sub_mgr.list_submissions()
+    submissions = sub_mgr.list_submissions(user_id="test-candidate-123")
     assert len(submissions) >= 1
     assert submissions[0].submissionId == report.submissionId
 
@@ -176,33 +176,46 @@ def test_concurrency_guard_rejects_modified_workspace_after_test_run(tmp_path: P
 
 
 def test_http_submission_and_report_endpoints():
-    """Verify HTTP API submission, report retrieval, and history listing."""
+    """Verify HTTP API submission, report retrieval, and history listing with authenticated user."""
+    from app.core.auth.dependencies import get_current_user
+    from app.core.auth.models import AuthenticatedUser
+    import uuid
+
+    test_user = AuthenticatedUser(
+        id=uuid.UUID("3fa85f64-5717-4562-b3fc-2c963f66afa6"),
+        role="authenticated",
+        email="candidate@example.com",
+    )
+    app.dependency_overrides[get_current_user] = lambda: test_user
     client = TestClient(app)
     session_id = "test-http-eval-e2e"
 
-    # 1. Init workspace
-    init_res = client.post(f"/api/v1/workspace/{session_id}/init?force_reset=true")
-    assert init_res.status_code == 200
+    try:
+        # 1. Init workspace
+        init_res = client.post(f"/api/v1/workspace/{session_id}/init?force_reset=true")
+        assert init_res.status_code == 200
 
-    # 2. Submit solution
-    sub_res = client.post(f"/api/v1/workspace/{session_id}/submit")
-    assert sub_res.status_code == 200
-    data = sub_res.json()
-    assert data["status"] == "submitted"
-    assert "submission_id" in data
-    assert "report" in data
-    submission_id = data["submission_id"]
+        # 2. Submit solution
+        sub_res = client.post(f"/api/v1/workspace/{session_id}/submit")
+        assert sub_res.status_code == 200
+        data = sub_res.json()
+        assert data["status"] == "submitted"
+        assert "submission_id" in data
+        assert "report" in data
+        submission_id = data["submission_id"]
 
-    # 3. Retrieve report
-    rep_res = client.get(f"/api/v1/submissions/{submission_id}")
-    assert rep_res.status_code == 200
-    rep_data = rep_res.json()
-    assert rep_data["submissionId"] == submission_id
-    assert "rubricCategories" in rep_data
+        # 3. Retrieve report
+        rep_res = client.get(f"/api/v1/submissions/{submission_id}")
+        assert rep_res.status_code == 200
+        rep_data = rep_res.json()
+        assert rep_data["submissionId"] == submission_id
+        assert "rubricCategories" in rep_data
 
-    # 4. List submissions
-    list_res = client.get("/api/v1/submissions")
-    assert list_res.status_code == 200
-    sub_list = list_res.json()["submissions"]
-    assert any(s["submissionId"] == submission_id for s in sub_list)
+        # 4. List submissions
+        list_res = client.get("/api/v1/submissions")
+        assert list_res.status_code == 200
+        sub_list = list_res.json()["submissions"]
+        assert any(s["submissionId"] == submission_id for s in sub_list)
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
 

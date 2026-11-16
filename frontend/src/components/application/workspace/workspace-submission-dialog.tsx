@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BACKEND_API_URL } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth-context";
 
 interface WorkspaceSubmissionDialogProps {
   isOpen: boolean;
@@ -64,6 +65,7 @@ export function WorkspaceSubmissionDialog({
   documents,
 }: WorkspaceSubmissionDialogProps) {
   const router = useRouter();
+  const { session } = useAuth();
   const [phase, setPhase] = useState<SubmissionPhase>("confirm");
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [submissionId, setSubmissionId] = useState<string>(DEMO_ASSESSMENT_REPORT.submissionId);
@@ -112,8 +114,14 @@ export function WorkspaceSubmissionDialog({
     timeoutsRef.current.push(step1, step2);
 
     try {
+      const headers: Record<string, string> = {};
+      if (session?.access_token) {
+        headers["Authorization"] = `Bearer ${session.access_token}`;
+      }
+
       const res = await fetch(`${BACKEND_API_URL}/api/v1/workspace/${sessionId}/submit`, {
         method: "POST",
+        headers,
       });
 
       if (!res.ok) {
@@ -169,10 +177,10 @@ export function WorkspaceSubmissionDialog({
               {phase === "confirm"
                 ? "Submit Challenge Solution"
                 : phase === "processing"
-                ? "Processing Demonstration Submission"
-                : phase === "error"
-                ? "Submission Notice"
-                : "Submission Completed"}
+                  ? "Processing Demonstration Submission"
+                  : phase === "error"
+                    ? "Submission Notice"
+                    : "Submission Completed"}
             </h3>
           </div>
 
@@ -265,8 +273,8 @@ export function WorkspaceSubmissionDialog({
                         isCurrent
                           ? "bg-zinc-900 border-border text-foreground"
                           : isDone
-                          ? "bg-zinc-950/40 border-border/40 text-zinc-400"
-                          : "bg-transparent border-transparent text-zinc-600"
+                            ? "bg-zinc-950/40 border-border/40 text-zinc-400"
+                            : "bg-transparent border-transparent text-zinc-600"
                       )}
                     >
                       <div className="mt-0.5">

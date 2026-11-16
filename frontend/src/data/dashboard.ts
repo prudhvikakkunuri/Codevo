@@ -39,33 +39,18 @@ export const DEMO_DASHBOARD_METRICS: DashboardMetric[] = [
   {
     id: "completed-interviews",
     label: "Completed Interviews",
-    value: "1",
-    helperText: "Demonstration submission",
-    isPlaceholder: false,
+    value: "0",
+    helperText: "No completed interviews",
+    isPlaceholder: true,
   },
   {
     id: "average-score",
     label: "Average Score",
-    value: "78%",
-    helperText: "Demo evaluation",
-    isPlaceholder: false,
+    value: "--",
+    helperText: "Calculated upon evaluation",
+    isPlaceholder: true,
   },
 ];
 
-// Centralized completed interview history records for Phase 1 demo
-export const DEMO_INTERVIEW_HISTORY: InterviewHistoryRecord[] = [
-  {
-    id: "hist-001",
-    submissionId: "sub-ci001-demo-01",
-    challengeId: "CI-001",
-    challengeTitle: "Debug a Broken FastAPI Authentication API",
-    difficulty: "Medium",
-    category: "Backend Engineering",
-    durationMinutes: 32,
-    completedAt: "2026-11-13T19:40:00Z",
-    status: "passed",
-    scorePercentage: 78,
-    assertionsPassed: 3,
-    assertionsTotal: 5,
-  },
-];
+// Centralized completed interview history records (empty for authentic user isolation)
+export const DEMO_INTERVIEW_HISTORY: InterviewHistoryRecord[] = [];

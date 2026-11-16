@@ -15,6 +15,7 @@ class TestCaseResult(BaseModel):
 class TestRunRecord(BaseModel):
     id: str
     sessionId: str
+    candidateId: str | None = None
     timestamp: str
     runnerType: str  # "docker", "subprocess", "docker_unavailable"
     exitCode: int
@@ -75,6 +76,7 @@ class WorkspaceSnapshotSummary(BaseModel):
 class AssessmentReport(BaseModel):
     submissionId: str
     sessionId: str
+    userId: str | None = None
     challengeId: str
     challengeTitle: str
     submittedAt: str
@@ -95,6 +97,7 @@ class AssessmentReport(BaseModel):
 class SubmissionRecord(BaseModel):
     submissionId: str
     sessionId: str
+    userId: str | None = None
     challengeId: str
     challengeTitle: str
     submittedAt: str

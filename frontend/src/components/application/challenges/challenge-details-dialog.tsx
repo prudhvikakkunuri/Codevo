@@ -7,6 +7,7 @@ import { DEMO_SESSION_ID } from "@/data/workspace";
 import { clearClientSubmission } from "@/data/assessment";
 import { clearWorkspaceState } from "@/lib/workspace-storage";
 import { BACKEND_API_URL } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth-context";
 import {
   X,
   Timer,
@@ -33,9 +34,12 @@ export function ChallengeDetailsDialog({
   onClose,
 }: ChallengeDetailsDialogProps) {
   const router = useRouter();
+  const { user } = useAuth();
   const dialogRef = useRef<HTMLDivElement>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+
+  const targetSessionId = user?.id ? `ci-001-${user.id}` : DEMO_SESSION_ID;
 
   const handleClose = React.useCallback(() => {
     if (isStarting) return;
@@ -74,11 +78,11 @@ export function ChallengeDetailsDialog({
 
     try {
       // Clear any prior client submission state and local document cache for this session
-      clearClientSubmission(DEMO_SESSION_ID);
-      clearWorkspaceState(DEMO_SESSION_ID);
+      clearClientSubmission(targetSessionId);
+      clearWorkspaceState(targetSessionId);
 
       // Call authoritative backend workspace initialization endpoint with force_reset=true
-      const res = await fetch(`${BACKEND_API_URL}/api/v1/workspace/${DEMO_SESSION_ID}/init?force_reset=true`, {
+      const res = await fetch(`${BACKEND_API_URL}/api/v1/workspace/${targetSessionId}/init?force_reset=true`, {
         method: "POST",
       });
 
@@ -88,7 +92,7 @@ export function ChallengeDetailsDialog({
 
       // Close modal and navigate to the interview workspace
       onClose();
-      router.push(`/app/workspace/${DEMO_SESSION_ID}`);
+      router.push(`/app/workspace/${targetSessionId}`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("[Codevo] Failed to start interview session:", err);
